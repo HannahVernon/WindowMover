@@ -70,17 +70,7 @@ if (-not $Iscc) {
 # --- Step 1: Publish ---
 if (-not $SkipPublish) {
     Write-Host "=== Publishing WindowMover ($Configuration, win-x64, self-contained) ===" -ForegroundColor Cyan
-    # Clean stale obj to avoid NETSDK1047 with mismatched RuntimeIdentifier
-    foreach ($proj in @("$Root\src\WindowMover\obj", "$Root\src\WindowMover.Core\obj")) {
-        if (Test-Path $proj) { Remove-Item $proj -Recurse -Force }
-    }
-    $csproj = "$Root\src\WindowMover\WindowMover.csproj"
-    dotnet restore $csproj -r win-x64 --verbosity quiet
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "dotnet restore failed"
-        exit 1
-    }
-    dotnet publish $csproj -c $Configuration -r win-x64 --self-contained --no-restore -o "$Root\publish" /p:VersionPrefix=$newVersion
+    dotnet publish "$Root\src\WindowMover\WindowMover.csproj" -c $Configuration -r win-x64 --self-contained -o "$Root\publish" /p:VersionPrefix=$newVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Error "dotnet publish failed"
         exit 1
