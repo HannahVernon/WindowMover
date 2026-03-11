@@ -17,6 +17,15 @@ public sealed class AppLogger : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private volatile bool _disposed;
 
+    public string? CurrentLogPath
+    {
+        get
+        {
+            var path = Path.Combine(_logDir, $"WindowMover-{DateTime.Now:yyyy-MM-dd}.log");
+            return File.Exists(path) ? path : null;
+        }
+    }
+
     private AppLogger()
     {
         _logDir = Path.Combine(

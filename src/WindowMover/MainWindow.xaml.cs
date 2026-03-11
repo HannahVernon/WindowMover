@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using WindowMover.Core.Services;
 using WindowMover.ViewModels;
 
 namespace WindowMover;
@@ -68,6 +69,25 @@ public partial class MainWindow : Window
     private void About_Click(object sender, RoutedEventArgs e)
     {
         new AboutDialog { Owner = this }.ShowDialog();
+    }
+
+    private void ViewLog_Click(object sender, RoutedEventArgs e)
+    {
+        var logPath = AppLogger.Instance.CurrentLogPath;
+        if (logPath != null && System.IO.File.Exists(logPath))
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "notepad.exe",
+                Arguments = logPath,
+                UseShellExecute = true
+            });
+        }
+        else
+        {
+            System.Windows.MessageBox.Show("No log file found for today.", "Log",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     private void Profiles_Click(object sender, RoutedEventArgs e)

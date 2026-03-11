@@ -240,6 +240,11 @@
                                FontSize="11">About</Hyperlink>
                 </TextBlock>
                 <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0">
+                    <Hyperlink Click="ViewLog_Click"
+                               Foreground="#607090" TextDecorations="None"
+                               FontSize="11">Log</Hyperlink>
+                </TextBlock>
+                <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0">
                     <Hyperlink Click="Profiles_Click"
                                Foreground="#607090" TextDecorations="None"
                                FontSize="11">Profiles</Hyperlink>
