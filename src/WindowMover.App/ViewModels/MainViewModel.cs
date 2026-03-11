@@ -1,0 +1,342 @@
+using System.Collections.ObjectModel;
+using System.Windows;
+using WindowMover.Core.Models;
+using WindowMover.Core.Services;
+
+namespace WindowMover.App.ViewModels;
+
+/// <summary>
+/// Main ViewModel orchestrating the monitor layout editor.
+/// </summary>
+public class MainViewModel : ViewModelBase, IDisposable
+{
+    private readonly MonitorIdentifier _monitorIdentifier;
+    private readonly MonitorWatcher _monitorWatcher;
+    private readonly WindowManager _windowManager;
+    private readonly ProfileManager _profileManager;
+    private readonly WindowMovementWatcher _windowMovementWatcher;
+
+    private string _currentSetupName = "Detecting...";
+    private string _statusMessage = string.Empty;
+    private MonitorSetup? _currentSetup;
+    private bool _hasUnsavedChanges;
+    private bool _disposed;
+
+    public MainViewModel()
+    {
+        _monitorIdentifier = new MonitorIdentifier();
+        _windowManager = new WindowManager();
+        _profileManager = new ProfileManager();
+        _monitorWatcher = new MonitorWatcher(_monitorIdentifier);
+        _windowMovementWatcher = new WindowMovementWatcher(_monitorIdentifier);
+
+        Monitors = [];
+        UnassignedApps = [];
+
+        SaveCommand = new RelayCommand(Save, () => HasUnsavedChanges);
+        ApplyNowCommand = new RelayCommand(ApplyNow);
+        RefreshAppsCommand = new RelayCommand(RefreshApps);
+        ResetCommand = new RelayCommand(Reset);
+
+        _monitorWatcher.SetupChanged += OnSetupChanged;
+        _windowMovementWatcher.WindowMoved += OnWindowMoved;
+        SessionDetector.SessionChanged += OnSessionChanged;
+    }
+
+    // Collections
+    public ObservableCollection<MonitorViewModel> Monitors { get; }
+    public ObservableCollection<AppRuleViewModel> UnassignedApps { get; }
+
+    // Properties
+    public string CurrentSetupName
+    {
+        get => _currentSetupName;
+        set => SetProperty(ref _currentSetupName, value);
+    }
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        set => SetProperty(ref _statusMessage, value);
+    }
+
+    public bool HasUnsavedChanges
+    {
+        get => _hasUnsavedChanges;
+        set => SetProperty(ref _hasUnsavedChanges, value);
+    }
+
+    // Commands
+    public RelayCommand SaveCommand { get; }
+    public RelayCommand ApplyNowCommand { get; }
+    public RelayCommand RefreshAppsCommand { get; }
+    public RelayCommand ResetCommand { get; }
+
+    /// <summary>
+    /// Initializes the ViewModel: detects monitors, loads profile, starts watching.
+    /// </summary>
+    public void Initialize()
+    {
+        DetectAndLoadSetup();
+        _monitorWatcher.Start();
+        _windowMovementWatcher.Start();
+        SessionDetector.StartWatching();
+    }
+
+    /// <summary>
+    /// Moves an app from one container to another (drag-and-drop handler).
+    /// </summary>
+    public void MoveApp(AppRuleViewModel app, MonitorViewModel? sourceMonitor, MonitorViewModel? targetMonitor)
+    {
+        // Remove from source
+        if (sourceMonitor != null)
+            sourceMonitor.AssignedApps.Remove(app);
+        else
+            UnassignedApps.Remove(app);
+
+        // Add to target
+        if (targetMonitor != null)
+            targetMonitor.AssignedApps.Add(app);
+        else
+            UnassignedApps.Add(app);
+
+        HasUnsavedChanges = true;
+    }
+
+    /// <summary>
+    /// Moves an app back to the unassigned pool.
+    /// </summary>
+    public void UnassignApp(AppRuleViewModel app, MonitorViewModel sourceMonitor)
+    {
+        sourceMonitor.AssignedApps.Remove(app);
+        UnassignedApps.Add(app);
+        HasUnsavedChanges = true;
+    }
+
+    private void DetectAndLoadSetup()
+    {
+        var monitors = _monitorIdentifier.GetConnectedMonitors();
+        var isRemote = SessionDetector.IsRemoteSession();
+        _currentSetup = MonitorSetup.FromMonitors(monitors, isRemote);
+
+        CurrentSetupName = _currentSetup.Name;
+
+        // Rebuild monitor columns
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            Monitors.Clear();
+            UnassignedApps.Clear();
+
+            foreach (var monitor in monitors)
+            {
+                Monitors.Add(new MonitorViewModel(monitor));
+            }
+
+            // Load existing profile or start fresh
+            var profile = _profileManager.GetProfile(_currentSetup);
+            if (profile != null)
+            {
+                LoadProfileRules(profile);
+                StatusMessage = $"Loaded profile: {profile.Name}";
+            }
+            else
+            {
+                StatusMessage = "New setup detected — assign apps to monitors";
+            }
+
+            // Add running apps that aren't in any rule
+            RefreshRunningApps();
+        });
+    }
+
+    private void LoadProfileRules(LayoutProfile profile)
+    {
+        foreach (var rule in profile.Rules)
+        {
+            var monitorVm = Monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (monitorVm != null)
+            {
+                monitorVm.AssignedApps.Add(new AppRuleViewModel(rule));
+            }
+            else
+            {
+                // Monitor no longer connected — put in unassigned
+                UnassignedApps.Add(new AppRuleViewModel(rule));
+            }
+        }
+    }
+
+    private void RefreshRunningApps()
+    {
+        var runningApps = _windowManager.GetRunningApps();
+        var assignedProcesses = new HashSet<string>(
+            Monitors.SelectMany(m => m.AssignedApps)
+                .Concat(UnassignedApps)
+                .Select(a => a.ProcessName),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var app in runningApps)
+        {
+            if (!assignedProcesses.Contains(app.ProcessName))
+            {
+                UnassignedApps.Add(new AppRuleViewModel(app));
+            }
+        }
+    }
+
+    private void Save()
+    {
+        if (_currentSetup == null) return;
+
+        var rules = Monitors
+            .SelectMany(m => m.AssignedApps.Select(a => a.ToRule(m.DeviceId)))
+            .ToList();
+
+        _profileManager.SaveProfile(_currentSetup, rules);
+        HasUnsavedChanges = false;
+        StatusMessage = $"Profile saved: {_currentSetup.Name}";
+    }
+
+    private void ApplyNow()
+    {
+        if (_currentSetup == null) return;
+
+        _windowMovementWatcher.Suppressed = true;
+        try
+        {
+            var profile = _profileManager.GetProfile(_currentSetup);
+            if (profile != null)
+            {
+                _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+                StatusMessage = "Rules applied";
+            }
+            else
+            {
+                var rules = Monitors
+                    .SelectMany(m => m.AssignedApps.Select(a => a.ToRule(m.DeviceId)))
+                    .ToList();
+                _windowManager.ApplyRules(rules, _currentSetup.Monitors);
+                StatusMessage = "Rules applied (unsaved)";
+            }
+        }
+        finally
+        {
+            _windowMovementWatcher.Suppressed = false;
+        }
+    }
+
+    private void RefreshApps()
+    {
+        RefreshRunningApps();
+        StatusMessage = "App list refreshed";
+    }
+
+    private void Reset()
+    {
+        DetectAndLoadSetup();
+        HasUnsavedChanges = false;
+        StatusMessage = "Reset to saved profile";
+    }
+
+    private void OnSetupChanged(object? sender, SetupChangedEventArgs e)
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            _windowMovementWatcher.Suppressed = true;
+            try
+            {
+                DetectAndLoadSetup();
+
+                // Auto-apply rules if a profile exists for the new setup
+                var profile = _profileManager.GetProfile(e.NewSetup);
+                if (profile != null)
+                {
+                    _windowManager.ApplyRules(profile.Rules, e.NewSetup.Monitors);
+                    StatusMessage = $"Setup changed to '{e.NewSetup.Name}' — rules applied";
+                }
+                else
+                {
+                    StatusMessage = $"New setup detected: {e.NewSetup.Name}";
+                }
+            }
+            finally
+            {
+                _windowMovementWatcher.Suppressed = false;
+            }
+        });
+    }
+
+    private void OnSessionChanged(object? sender, SessionChangedEventArgs e)
+    {
+        // Re-detect everything when session type changes
+        Application.Current.Dispatcher.Invoke(DetectAndLoadSetup);
+    }
+
+    private void OnWindowMoved(object? sender, WindowMovedEventArgs e)
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            var targetMonitorVm = Monitors.FirstOrDefault(
+                m => m.DeviceId == e.TargetMonitor.DeviceId);
+
+            if (targetMonitorVm == null)
+                return;
+
+            // Find existing rule for this process in any monitor column or unassigned
+            AppRuleViewModel? existingApp = null;
+            MonitorViewModel? sourceMonitor = null;
+
+            foreach (var monitor in Monitors)
+            {
+                existingApp = monitor.AssignedApps.FirstOrDefault(
+                    a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+                if (existingApp != null)
+                {
+                    sourceMonitor = monitor;
+                    break;
+                }
+            }
+
+            existingApp ??= UnassignedApps.FirstOrDefault(
+                a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+
+            if (existingApp != null)
+            {
+                // Already on the correct monitor — nothing to do
+                if (sourceMonitor == targetMonitorVm)
+                    return;
+
+                MoveApp(existingApp, sourceMonitor, targetMonitorVm);
+                StatusMessage = $"{existingApp.DisplayName} moved to {targetMonitorVm.DisplayName}";
+            }
+            else
+            {
+                // New app we haven't seen — add it directly to the target monitor
+                var newApp = new AppRuleViewModel
+                {
+                    ProcessName = e.ProcessName,
+                    DisplayName = e.ProcessName,
+                    ExecutablePath = e.ExecutablePath
+                };
+                targetMonitorVm.AssignedApps.Add(newApp);
+                HasUnsavedChanges = true;
+                StatusMessage = $"{e.ProcessName} assigned to {targetMonitorVm.DisplayName}";
+            }
+        });
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _monitorWatcher.SetupChanged -= OnSetupChanged;
+        _windowMovementWatcher.WindowMoved -= OnWindowMoved;
+        SessionDetector.SessionChanged -= OnSessionChanged;
+        _monitorWatcher.Dispose();
+        _windowMovementWatcher.Dispose();
+        SessionDetector.StopWatching();
+
+        GC.SuppressFinalize(this);
+    }
+}
