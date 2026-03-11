@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using WindowMover.Core.Models;
 
-namespace WindowMover.App.ViewModels;
+namespace WindowMover.ViewModels;
 
 /// <summary>
 /// ViewModel representing a single monitor column in the drag-and-drop UI.

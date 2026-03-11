@@ -1,10 +1,10 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Windows;
 using System.Windows.Forms;
-using WindowMover.App.ViewModels;
+using WindowMover.ViewModels;
 using WindowMover.Core.Services;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 /// <summary>
 /// Application entry point: single-instance enforcement, system tray, startup.
@@ -66,7 +66,7 @@ public partial class App : Application
             ContextMenuStrip = new ContextMenuStrip()
         };
 
-        _trayIcon.ContextMenuStrip.Items.Add("Open Settings", null, (_, _) => ShowMainWindow());
+        _trayIcon.ContextMenuStrip.Items.Add("Open WindowMover...", null, (_, _) => ShowMainWindow());
         _trayIcon.ContextMenuStrip.Items.Add("Apply Rules Now", null, (_, _) => ApplyRulesNow());
         _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
         _trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) => ExitApplication());

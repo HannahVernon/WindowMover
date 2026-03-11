@@ -90,6 +90,53 @@ public class WindowManager
     }
 
     /// <summary>
+    /// Captures the current window layout — which app is on which monitor right now.
+    /// Returns a list of WindowRules reflecting the actual state of the desktop.
+    /// </summary>
+    public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors)
+    {
+        var windows = GetVisibleWindows();
+        var rules = new Dictionary<string, WindowRule>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var window in windows)
+        {
+            if (rules.ContainsKey(window.ProcessName))
+                continue;
+
+            var hMonitor = User32.MonitorFromWindow(window.Handle, User32.MONITOR_DEFAULTTONEAREST);
+            var monitor = MatchMonitorByHandle(hMonitor, monitors);
+            if (monitor == null) continue;
+
+            rules[window.ProcessName] = new WindowRule
+            {
+                ProcessName = window.ProcessName,
+                DisplayName = GetFriendlyAppName(window),
+                ExecutablePath = window.ExecutablePath,
+                TargetMonitorId = monitor.DeviceId
+            };
+        }
+
+        return rules.Values.ToList();
+    }
+
+    /// <summary>
+    /// Matches an HMONITOR handle to a MonitorInfo by comparing screen bounds.
+    /// </summary>
+    private static MonitorInfo? MatchMonitorByHandle(IntPtr hMonitor, IReadOnlyList<MonitorInfo> monitors)
+    {
+        var info = new User32.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<User32.MONITORINFO>() };
+        if (!User32.GetMonitorInfo(hMonitor, ref info))
+            return null;
+
+        var rect = info.rcMonitor;
+        return monitors.FirstOrDefault(m =>
+            m.Bounds.X == rect.Left &&
+            m.Bounds.Y == rect.Top &&
+            m.Bounds.Width == rect.Right - rect.Left &&
+            m.Bounds.Height == rect.Bottom - rect.Top);
+    }
+
+    /// <summary>
     /// Applies window rules: moves each matching app's windows to its target monitor.
     /// </summary>
     public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
@@ -340,4 +387,5 @@ public class AppInfo
     public string DisplayName { get; set; } = string.Empty;
     public string? ExecutablePath { get; set; }
     public int WindowCount { get; set; }
+    public uint ProcessId { get; set; }
 }

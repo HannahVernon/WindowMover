@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 public partial class ErrorDialog : Window
 {

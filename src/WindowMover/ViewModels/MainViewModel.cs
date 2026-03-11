@@ -3,7 +3,7 @@ using System.Windows;
 using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
-namespace WindowMover.App.ViewModels;
+namespace WindowMover.ViewModels;
 
 /// <summary>
 /// Main ViewModel orchestrating the monitor layout editor.
@@ -19,6 +19,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private string _currentSetupName = "Detecting...";
     private string _statusMessage = string.Empty;
     private MonitorSetup? _currentSetup;
+    private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
     private bool _disposed;
 
@@ -37,6 +38,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         ApplyNowCommand = new RelayCommand(ApplyNow);
         RefreshAppsCommand = new RelayCommand(RefreshApps);
         ResetCommand = new RelayCommand(Reset);
+        CaptureLayoutCommand = new RelayCommand(CaptureCurrentLayout);
 
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
@@ -49,7 +51,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     // Properties
     public ProfileManager ProfileManager => _profileManager;
-    public string? ActiveFingerprint => _currentSetup?.Fingerprint;
+    public string? ActiveFingerprint => _activeFingerprint;
 
     public string CurrentSetupName
     {
@@ -80,6 +82,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public RelayCommand ApplyNowCommand { get; }
     public RelayCommand RefreshAppsCommand { get; }
     public RelayCommand ResetCommand { get; }
+    public RelayCommand CaptureLayoutCommand { get; }
 
     /// <summary>
     /// Initializes the ViewModel: detects monitors, loads profile, starts watching.
@@ -92,6 +95,44 @@ public class MainViewModel : ViewModelBase, IDisposable
         _windowMovementWatcher.Start();
         SessionDetector.StartWatching();
         AppLogger.Instance.Info($"Initialized with setup: {CurrentSetupName}, {Monitors.Count} monitor(s)");
+    }
+
+    /// <summary>
+    /// Activates a specific profile by fingerprint: loads its rules into the UI and applies them.
+    /// </summary>
+    public void ActivateProfile(string fingerprint)
+    {
+        var profile = _profileManager.GetProfile(fingerprint);
+        if (profile == null) return;
+
+        AppLogger.Instance.Info($"Activating profile: {profile.Name} ({fingerprint})");
+
+        _activeFingerprint = fingerprint;
+        // Reload the UI with this profile's rules
+        foreach (var monitor in Monitors)
+            monitor.AssignedApps.Clear();
+        UnassignedApps.Clear();
+
+        LoadProfileRules(profile);
+        RefreshRunningApps();
+
+        // Apply window positions
+        if (_currentSetup != null)
+        {
+            _windowMovementWatcher.Suppressed = true;
+            try
+            {
+                _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+            }
+            finally
+            {
+                _windowMovementWatcher.Suppressed = false;
+            }
+        }
+
+        CurrentSetupName = profile.Name;
+        HasUnsavedChanges = false;
+        StatusMessage = $"Activated profile: {profile.Name}";
     }
 
     /// <summary>
@@ -147,12 +188,21 @@ public class MainViewModel : ViewModelBase, IDisposable
             var profile = _profileManager.GetProfile(_currentSetup);
             if (profile != null)
             {
+                _activeFingerprint = profile.SetupFingerprint;
+                CurrentSetupName = profile.Name;
                 LoadProfileRules(profile);
                 StatusMessage = $"Loaded profile: {profile.Name}";
             }
             else
             {
-                StatusMessage = "New setup detected — assign apps to monitors";
+                // Auto-create a new profile from the current window layout
+                var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+                var newProfile = _profileManager.SaveProfile(_currentSetup, capturedRules);
+                _activeFingerprint = newProfile.SetupFingerprint;
+                CurrentSetupName = newProfile.Name;
+                LoadProfileRules(newProfile);
+                AppLogger.Instance.Info($"Auto-created profile: {newProfile.Name} with {capturedRules.Count} rule(s)");
+                StatusMessage = $"New profile created: {newProfile.Name}";
             }
 
             // Add running apps that aren't in any rule
@@ -197,29 +247,51 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     private void Save()
     {
-        if (_currentSetup == null) return;
+        if (_currentSetup == null || _activeFingerprint == null) return;
 
         var rules = Monitors
             .SelectMany(m => m.AssignedApps.Select(a => a.ToRule(m.DeviceId)))
             .ToList();
 
-        _profileManager.SaveProfile(_currentSetup, rules);
-        HasUnsavedChanges = false;
-        StatusMessage = $"Profile saved: {_currentSetup.Name}";
+        // Update the active profile's rules (which may differ from _currentSetup.Fingerprint)
+        var existingProfile = _profileManager.GetProfile(_activeFingerprint);
+        if (existingProfile != null)
+        {
+            _profileManager.UpdateRules(_activeFingerprint, rules);
+            HasUnsavedChanges = false;
+            StatusMessage = $"Profile saved: {existingProfile.Name}";
+        }
+        else
+        {
+            // Fallback: create a new profile from the current setup
+            _profileManager.SaveProfile(_currentSetup, rules);
+            _activeFingerprint = _currentSetup.Fingerprint;
+            HasUnsavedChanges = false;
+            StatusMessage = $"Profile saved: {_currentSetup.Name}";
+        }
     }
 
     private void ApplyNow()
     {
         if (_currentSetup == null) return;
 
+        if (HasUnsavedChanges)
+        {
+            Save();
+            StatusMessage = "Changes saved automatically";
+        }
+
         _windowMovementWatcher.Suppressed = true;
         try
         {
-            var profile = _profileManager.GetProfile(_currentSetup);
+            var profile = _activeFingerprint != null
+                ? _profileManager.GetProfile(_activeFingerprint)
+                : _profileManager.GetProfile(_currentSetup);
+
             if (profile != null)
             {
                 _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
-                StatusMessage = "Rules applied";
+                StatusMessage = "Rules saved and applied";
             }
             else
             {
@@ -249,6 +321,31 @@ public class MainViewModel : ViewModelBase, IDisposable
         StatusMessage = "Reset to saved profile";
     }
 
+    private void CaptureCurrentLayout()
+    {
+        if (_currentSetup == null) return;
+
+        var rules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+        AppLogger.Instance.Info($"Captured current layout: {rules.Count} app(s)");
+
+        // Clear existing assignments and repopulate from captured state
+        foreach (var monitor in Monitors)
+            monitor.AssignedApps.Clear();
+        UnassignedApps.Clear();
+
+        foreach (var rule in rules)
+        {
+            var monitorVm = Monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (monitorVm != null)
+                monitorVm.AssignedApps.Add(new AppRuleViewModel(rule));
+            else
+                UnassignedApps.Add(new AppRuleViewModel(rule));
+        }
+
+        HasUnsavedChanges = true;
+        StatusMessage = $"Captured current layout — {rules.Count} app(s) mapped";
+    }
+
     private void OnSetupChanged(object? sender, SetupChangedEventArgs e)
     {
         AppLogger.Instance.Info($"Monitor setup changed: {e.NewSetup.Name} ({e.NewSetup.Monitors.Count} monitors)");
@@ -260,15 +357,18 @@ public class MainViewModel : ViewModelBase, IDisposable
                 DetectAndLoadSetup();
 
                 // Auto-apply rules if a profile exists for the new setup
-                var profile = _profileManager.GetProfile(e.NewSetup);
-                if (profile != null)
+                if (_currentSetup != null)
                 {
-                    _windowManager.ApplyRules(profile.Rules, e.NewSetup.Monitors);
-                    StatusMessage = $"Setup changed to '{e.NewSetup.Name}' — rules applied";
-                }
-                else
-                {
-                    StatusMessage = $"New setup detected: {e.NewSetup.Name}";
+                    var profile = _profileManager.GetProfile(_currentSetup);
+                    if (profile != null)
+                    {
+                        _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+                        StatusMessage = $"Setup changed to '{_currentSetup.Name}' — rules applied";
+                    }
+                    else
+                    {
+                        StatusMessage = $"New setup detected: {_currentSetup.Name}";
+                    }
                 }
             }
             finally

@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Navigation;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 public partial class AboutDialog : Window
 {

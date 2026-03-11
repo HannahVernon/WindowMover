@@ -149,8 +149,12 @@ public class ProfileManager
         File.WriteAllText(path, json);
     }
 
-    private string GetProfilePath(string fingerprint) =>
-        Path.Combine(_profilesDir, $"{fingerprint}.json");
+    private string GetProfilePath(string fingerprint)
+    {
+        // Sanitize fingerprint to prevent path traversal
+        var safeName = Path.GetFileName(fingerprint);
+        return Path.Combine(_profilesDir, $"{safeName}.json");
+    }
 
     private static string GetDefaultProfilesDir() =>
         Path.Combine(

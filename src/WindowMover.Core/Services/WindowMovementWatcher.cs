@@ -143,7 +143,8 @@ public class WindowMovementWatcher : IDisposable
                     hwnd,
                     process.ProcessName,
                     exePath,
-                    targetMonitor));
+                    targetMonitor,
+                    (uint)process.Id));
             }
         }
         catch (ArgumentException)
@@ -187,13 +188,15 @@ public class WindowMovedEventArgs : EventArgs
     public string ProcessName { get; }
     public string? ExecutablePath { get; }
     public MonitorInfo TargetMonitor { get; }
+    public uint ProcessId { get; }
 
     public WindowMovedEventArgs(IntPtr windowHandle, string processName,
-        string? executablePath, MonitorInfo targetMonitor)
+        string? executablePath, MonitorInfo targetMonitor, uint processId = 0)
     {
         WindowHandle = windowHandle;
         ProcessName = processName;
         ExecutablePath = executablePath;
         TargetMonitor = targetMonitor;
+        ProcessId = processId;
     }
 }

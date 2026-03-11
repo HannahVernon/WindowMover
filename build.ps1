@@ -57,8 +57,8 @@ else {
 
 # --- Locate Inno Setup ---
 $IsccPaths = @(
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-    "C:\Program Files\Inno Setup 6\ISCC.exe"
+    "$($env:ProgramFiles)\Inno Setup 6\ISCC.exe",
+    "$(${env:ProgramFiles(x86)})\Inno Setup 6\ISCC.exe"
 )
 $Iscc = $IsccPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
@@ -70,8 +70,7 @@ if (-not $Iscc) {
 # --- Step 1: Publish ---
 if (-not $SkipPublish) {
     Write-Host "=== Publishing WindowMover ($Configuration, win-x64, self-contained) ===" -ForegroundColor Cyan
-    dotnet restore "$Root\src\WindowMover.App" -r win-x64
-    dotnet publish "$Root\src\WindowMover.App" -c $Configuration -r win-x64 --self-contained --no-restore -o "$Root\publish" /p:VersionPrefix=$newVersion
+    dotnet publish "$Root\src\WindowMover\WindowMover.csproj" -c $Configuration -r win-x64 --self-contained -o "$Root\publish" /p:VersionPrefix=$newVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Error "dotnet publish failed"
         exit 1

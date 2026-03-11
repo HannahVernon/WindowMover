@@ -9,7 +9,7 @@
 
 #define MyAppName "WindowMover"
 #define MyAppPublisher "WindowMover"
-#define MyAppExeName "WindowMover.App.exe"
+#define MyAppExeName "WindowMover.exe"
 
 [Setup]
 AppId={{B7A3E2F1-4C8D-4A9B-BE6F-12345ABCDEF0}
@@ -20,6 +20,8 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputDir=..\dist
 OutputBaseFilename=WindowMover-Setup-{#MyAppVersion}
+SetupIconFile=..\src\WindowMover\Assets\icon.ico
+UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -36,7 +38,7 @@ Name: "startupentry"; Description: "Start WindowMover automatically when I log i
 
 [Files]
 ; Publish the app as self-contained first:
-;   dotnet publish src\WindowMover.App -c Release -r win-x64 --self-contained -o publish
+;   dotnet publish src\WindowMover -c Release -r win-x64 --self-contained -o publish
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

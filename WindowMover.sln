@@ -7,7 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowMover.Core", "src\WindowMover.Core\WindowMover.Core.csproj", "{0A1E09E0-F9F5-4801-B279-1D0B72E19549}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowMover.App", "src\WindowMover.App\WindowMover.App.csproj", "{B1DEF4FA-51A1-4CE0-8A9F-83678726DFA9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowMover", "src\WindowMover\WindowMover.csproj", "{B1DEF4FA-51A1-4CE0-8A9F-83678726DFA9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
