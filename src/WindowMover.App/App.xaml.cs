@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Forms;
 using WindowMover.App.ViewModels;
+using WindowMover.Core.Services;
 
 namespace WindowMover.App;
 
@@ -13,17 +14,19 @@ public partial class App : Application
     private NotifyIcon? _trayIcon;
     private MainWindow? _mainWindow;
     private Mutex? _singleInstanceMutex;
+    private static readonly AppLogger Log = AppLogger.Instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        // Global exception handling to prevent silent crashes
+        Log.Info("WindowMover starting");
+
+        // Global exception handling — log and show to user
         DispatcherUnhandledException += (_, args) =>
         {
-            System.Windows.MessageBox.Show(
-                $"An unexpected error occurred:\n\n{args.Exception.Message}\n\n{args.Exception.StackTrace}",
-                "WindowMover Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error("Unhandled dispatcher exception", args.Exception);
+            ErrorDialog.Show(args.Exception.Message);
             args.Handled = true;
         };
 
@@ -31,9 +34,8 @@ public partial class App : Application
         {
             if (args.ExceptionObject is Exception ex)
             {
-                System.Windows.MessageBox.Show(
-                    $"Fatal error:\n\n{ex.Message}\n\n{ex.StackTrace}",
-                    "WindowMover Fatal Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Log.Error("Fatal unhandled exception", ex);
+                ErrorDialog.Show(ex.Message);
             }
         };
 
@@ -41,6 +43,7 @@ public partial class App : Application
         _singleInstanceMutex = new Mutex(true, "WindowMover_SingleInstance_{B7A3E2F1-4C8D-4A9B-BE6F-12345ABCDEF0}", out bool createdNew);
         if (!createdNew)
         {
+            Log.Warn("Another instance is already running — exiting");
             System.Windows.MessageBox.Show(
                 "WindowMover is already running. Check the system tray.",
                 "WindowMover", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -50,6 +53,7 @@ public partial class App : Application
 
         SetupTrayIcon();
         ShowMainWindow();
+        Log.Info("WindowMover started successfully");
     }
 
     private void SetupTrayIcon()
@@ -57,7 +61,7 @@ public partial class App : Application
         _trayIcon = new NotifyIcon
         {
             Text = "WindowMover",
-            Icon = SystemIcons.Application,
+            Icon = LoadAppIcon(),
             Visible = true,
             ContextMenuStrip = new ContextMenuStrip()
         };
@@ -74,6 +78,7 @@ public partial class App : Application
     {
         if (_mainWindow == null || !_mainWindow.IsLoaded)
         {
+            Log.Info("Creating new main window");
             _mainWindow = new MainWindow();
         }
 
@@ -93,6 +98,8 @@ public partial class App : Application
 
     private void ExitApplication()
     {
+        Log.Info("WindowMover shutting down");
+
         if (_mainWindow?.DataContext is MainViewModel vm)
         {
             vm.Dispose();
@@ -113,6 +120,25 @@ public partial class App : Application
         _singleInstanceMutex?.ReleaseMutex();
         _singleInstanceMutex?.Dispose();
 
+        Log.Info("WindowMover exited");
+        Log.Dispose();
+
         Shutdown();
+    }
+
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+            if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
+            {
+                var icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (icon != null) return icon;
+            }
+        }
+        catch { }
+
+        return SystemIcons.Application;
     }
 }
