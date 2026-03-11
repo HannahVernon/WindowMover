@@ -221,19 +221,33 @@ public class WindowManager
 
     private static string GetFriendlyAppName(WindowInfo window)
     {
+        // For UWP apps (resolved from ApplicationFrameHost), prefer the window title
+        // since the exe's FileDescription is often unhelpful (e.g. "Application Frame Host")
+        if (IsUwpProcess(window.ProcessName))
+        {
+            if (!string.IsNullOrWhiteSpace(window.Title) &&
+                window.Title.Length < 60 &&
+                !window.Title.Contains('\\') &&
+                !window.Title.Contains('/'))
+            {
+                return window.Title;
+            }
+        }
+
         // Try to get the FileDescription from the process executable
         try
         {
             if (window.ExecutablePath != null)
             {
                 var versionInfo = FileVersionInfo.GetVersionInfo(window.ExecutablePath);
-                if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription))
+                if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription) &&
+                    !versionInfo.FileDescription.Contains("Application Frame Host", StringComparison.OrdinalIgnoreCase))
                     return versionInfo.FileDescription;
             }
         }
         catch { }
 
-        // For UWP apps, the window title is often a good display name
+        // For any app, the window title is a decent fallback
         if (!string.IsNullOrWhiteSpace(window.Title) &&
             window.Title.Length < 60 &&
             !window.Title.Contains('\\') &&
@@ -242,8 +256,18 @@ public class WindowManager
             return window.Title;
         }
 
-        // Fallback to process name
         return window.ProcessName;
+    }
+
+    private static bool IsUwpProcess(string processName)
+    {
+        // Common UWP host processes whose FileDescription is not user-friendly
+        var uwpHosts = new[] {
+            "ApplicationFrameHost", "SystemSettings", "WinStore.App",
+            "Microsoft.Photos", "WindowsCalculator", "ScreenSketch",
+            "Video.UI", "Music.UI", "HxOutlook", "HxCalendarAppImm"
+        };
+        return uwpHosts.Any(h => processName.Contains(h, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

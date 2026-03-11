@@ -1,0 +1,82 @@
+using System.Windows;
+using WindowMover.Core.Services;
+
+namespace WindowMover.App;
+
+public partial class ProfilesDialog : Window
+{
+    private readonly ProfileManager _profileManager;
+    private readonly string? _activeFingerprint;
+
+    public bool ProfilesChanged { get; private set; }
+
+    public ProfilesDialog(ProfileManager profileManager, string? activeFingerprint)
+    {
+        InitializeComponent();
+        _profileManager = profileManager;
+        _activeFingerprint = activeFingerprint;
+        RefreshList();
+    }
+
+    private void RefreshList()
+    {
+        var items = _profileManager.Profiles.Values
+            .OrderBy(p => p.Name)
+            .Select(p => new ProfileListItem
+            {
+                Fingerprint = p.SetupFingerprint,
+                Name = p.Name,
+                MonitorCount = p.Setup.Monitors.Count,
+                RuleCount = p.Rules.Count,
+                IsActive = p.SetupFingerprint == _activeFingerprint,
+                ActiveIndicator = p.SetupFingerprint == _activeFingerprint ? "\u2713" : "",
+                LastModified = p.LastModified.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+            })
+            .ToList();
+
+        ProfileList.ItemsSource = items;
+    }
+
+    private void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (ProfileList.SelectedItem is not ProfileListItem item) return;
+
+        var dialog = new RenameDialog(item.Name) { Owner = this };
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.NewName))
+        {
+            _profileManager.RenameProfile(item.Fingerprint, dialog.NewName.Trim());
+            ProfilesChanged = true;
+            RefreshList();
+        }
+    }
+
+    private void Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (ProfileList.SelectedItem is not ProfileListItem item) return;
+
+        var activeWarning = item.IsActive ? " This is the currently active profile." : "";
+        var result = MessageBox.Show(
+            $"Delete profile \"{item.Name}\"?{activeWarning}\n\nThis cannot be undone.",
+            "Delete Profile", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+
+        if (result == MessageBoxResult.Yes)
+        {
+            _profileManager.DeleteProfile(item.Fingerprint);
+            ProfilesChanged = true;
+            RefreshList();
+        }
+    }
+
+    private void Close_Click(object sender, RoutedEventArgs e) => Close();
+}
+
+internal class ProfileListItem
+{
+    public string Fingerprint { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int MonitorCount { get; set; }
+    public int RuleCount { get; set; }
+    public bool IsActive { get; set; }
+    public string ActiveIndicator { get; set; } = "";
+    public string LastModified { get; set; } = "";
+}

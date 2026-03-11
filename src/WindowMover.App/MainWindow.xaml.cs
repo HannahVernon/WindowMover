@@ -22,6 +22,9 @@ public partial class MainWindow : Window
         var version = System.Reflection.Assembly.GetExecutingAssembly()
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "dev";
+        // Strip the +commithash suffix that .NET appends
+        var plusIdx = version.IndexOf('+');
+        if (plusIdx >= 0) version = version[..plusIdx];
         Title = $"WindowMover v{version} — Monitor Layout Manager";
 
         Loaded += MainWindow_Loaded;
@@ -36,8 +39,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ViewModel.StatusMessage = $"Initialization error: {ex.Message}";
-            System.Diagnostics.Debug.WriteLine($"Initialize failed: {ex}");
+            Core.Services.AppLogger.Instance.Error("Initialization failed", ex);
+            ViewModel.StatusMessage = "Initialization error — check log for details";
+            ErrorDialog.Show(ex.Message);
         }
     }
 
@@ -59,6 +63,30 @@ public partial class MainWindow : Window
     {
         _forceClose = true;
         Close();
+    }
+
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
+        new AboutDialog { Owner = this }.ShowDialog();
+    }
+
+    private void Profiles_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ProfilesDialog(ViewModel.ProfileManager, ViewModel.ActiveFingerprint)
+        {
+            Owner = this
+        };
+        dialog.ShowDialog();
+
+        if (dialog.ProfilesChanged)
+        {
+            // If the active profile was renamed, refresh the setup name
+            var active = ViewModel.ProfileManager.GetProfile(ViewModel.ActiveFingerprint ?? "");
+            if (active != null)
+                ViewModel.CurrentSetupName = active.Name;
+
+            ViewModel.StatusMessage = "Profiles updated";
+        }
     }
 
     // ===== Drag-and-drop handling =====

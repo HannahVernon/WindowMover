@@ -48,6 +48,9 @@ public class MainViewModel : ViewModelBase, IDisposable
     public ObservableCollection<AppRuleViewModel> UnassignedApps { get; }
 
     // Properties
+    public ProfileManager ProfileManager => _profileManager;
+    public string? ActiveFingerprint => _currentSetup?.Fingerprint;
+
     public string CurrentSetupName
     {
         get => _currentSetupName;
@@ -63,8 +66,14 @@ public class MainViewModel : ViewModelBase, IDisposable
     public bool HasUnsavedChanges
     {
         get => _hasUnsavedChanges;
-        set => SetProperty(ref _hasUnsavedChanges, value);
+        set
+        {
+            SetProperty(ref _hasUnsavedChanges, value);
+            OnPropertyChanged(nameof(UnsavedIndicator));
+        }
     }
+
+    public string UnsavedIndicator => HasUnsavedChanges ? "Unsaved Changes" : "No Unsaved Changes";
 
     // Commands
     public RelayCommand SaveCommand { get; }
@@ -77,10 +86,12 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// </summary>
     public void Initialize()
     {
+        AppLogger.Instance.Info("Initializing: detecting monitors and loading profile");
         DetectAndLoadSetup();
         _monitorWatcher.Start();
         _windowMovementWatcher.Start();
         SessionDetector.StartWatching();
+        AppLogger.Instance.Info($"Initialized with setup: {CurrentSetupName}, {Monitors.Count} monitor(s)");
     }
 
     /// <summary>
@@ -240,6 +251,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     private void OnSetupChanged(object? sender, SetupChangedEventArgs e)
     {
+        AppLogger.Instance.Info($"Monitor setup changed: {e.NewSetup.Name} ({e.NewSetup.Monitors.Count} monitors)");
         Application.Current.Dispatcher.Invoke(() =>
         {
             _windowMovementWatcher.Suppressed = true;

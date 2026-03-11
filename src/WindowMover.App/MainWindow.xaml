@@ -9,6 +9,7 @@
         Height="650" Width="1000" MinHeight="450" MinWidth="700"
         Background="{StaticResource BackgroundBrush}"
         WindowStartupLocation="CenterScreen"
+        Icon="Assets/icon.ico"
         Closing="Window_Closing">
 
     <Window.DataContext>
@@ -228,8 +229,19 @@
         <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}" Padding="12,6">
             <DockPanel>
                 <TextBlock DockPanel.Dock="Right"
-                           Text="{Binding HasUnsavedChanges, StringFormat='Unsaved changes: {0}'}"
-                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
+                           Text="{Binding UnsavedIndicator}"
+                           Foreground="{StaticResource TextSecondaryBrush}" FontSize="11"
+                           Margin="12,0,0,0" />
+                <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0">
+                    <Hyperlink Click="About_Click"
+                               Foreground="#607090" TextDecorations="None"
+                               FontSize="11">About</Hyperlink>
+                </TextBlock>
+                <TextBlock DockPanel.Dock="Right" Margin="12,0,0,0">
+                    <Hyperlink Click="Profiles_Click"
+                               Foreground="#607090" TextDecorations="None"
+                               FontSize="11">Profiles</Hyperlink>
+                </TextBlock>
                 <TextBlock Text="{Binding StatusMessage}"
                            Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" />
             </DockPanel>
