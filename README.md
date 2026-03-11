@@ -77,7 +77,7 @@ If you prefer to run each step individually:
 dotnet build
 
 # Publish as self-contained x64
-dotnet publish src\WindowMover.App -c Release -r win-x64 --self-contained --force -o publish
+dotnet publish src\WindowMover -c Release -r win-x64 --self-contained --force -o publish
 
 # Compile the installer (requires Inno Setup)
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.0 installer\WindowMover.iss
@@ -96,7 +96,7 @@ WindowMover.sln
 │   │   ├── Models/             # MonitorInfo, MonitorSetup, WindowRule, LayoutProfile
 │   │   ├── Services/           # MonitorIdentifier, MonitorWatcher, WindowManager, etc.
 │   │   └── Native/             # P/Invoke declarations (User32, Wtsapi32)
-│   └── WindowMover.App/        # WPF application
+│   └── WindowMover/        # WPF application
 │       ├── ViewModels/         # MVVM ViewModels
 │       ├── Controls/           # Custom WPF controls
 │       └── Resources/          # App manifest, assets

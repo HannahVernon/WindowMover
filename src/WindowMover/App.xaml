@@ -1,7 +1,7 @@
-﻿<Application x:Class="WindowMover.App.App"
+<Application x:Class="WindowMover.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:WindowMover.App"
+             xmlns:local="clr-namespace:WindowMover"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
 

@@ -1,7 +1,7 @@
 using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
-namespace WindowMover.App.ViewModels;
+namespace WindowMover.ViewModels;
 
 /// <summary>
 /// ViewModel representing a draggable application in the layout editor.

@@ -1,4 +1,4 @@
-<Window x:Class="WindowMover.App.ProfilesDialog"
+<Window x:Class="WindowMover.ProfilesDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Manage Profiles"
@@ -66,6 +66,10 @@
                     Padding="14,7" Margin="0,0,8,0"
                     Background="#2A5A2A" Foreground="#E0E0E0"
                     BorderBrush="#4A8A4A" Cursor="Hand" />
+            <Button Content="Activate" Click="Activate_Click"
+                    Padding="14,7" Margin="0,0,8,0"
+                    Background="#4A3A6A" Foreground="#E0E0E0"
+                    BorderBrush="#6A5A8A" Cursor="Hand" />
             <Button Content="Rename" Click="Rename_Click"
                     Padding="14,7" Margin="0,0,8,0"
                     Background="#3A3A5A" Foreground="#E0E0E0"

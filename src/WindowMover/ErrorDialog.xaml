@@ -1,4 +1,4 @@
-<Window x:Class="WindowMover.App.ErrorDialog"
+<Window x:Class="WindowMover.ErrorDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="WindowMover Error"

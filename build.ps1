@@ -70,8 +70,8 @@ if (-not $Iscc) {
 # --- Step 1: Publish ---
 if (-not $SkipPublish) {
     Write-Host "=== Publishing WindowMover ($Configuration, win-x64, self-contained) ===" -ForegroundColor Cyan
-    dotnet restore "$Root\src\WindowMover.App" -r win-x64
-    dotnet publish "$Root\src\WindowMover.App" -c $Configuration -r win-x64 --self-contained --no-restore -o "$Root\publish" /p:VersionPrefix=$newVersion
+    dotnet restore "$Root\src\WindowMover" -r win-x64
+    dotnet publish "$Root\src\WindowMover" -c $Configuration -r win-x64 --self-contained --no-restore -o "$Root\publish" /p:VersionPrefix=$newVersion
     if ($LASTEXITCODE -ne 0) {
         Write-Error "dotnet publish failed"
         exit 1

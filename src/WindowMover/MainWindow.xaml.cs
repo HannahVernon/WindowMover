@@ -1,11 +1,11 @@
-﻿using System.Reflection;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using WindowMover.App.ViewModels;
+using WindowMover.ViewModels;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 /// <summary>
 /// Main window: drag-and-drop layout editor for assigning apps to monitors.
@@ -78,7 +78,11 @@ public partial class MainWindow : Window
         };
         dialog.ShowDialog();
 
-        if (dialog.ProfilesChanged)
+        if (dialog.ActivatedFingerprint != null)
+        {
+            ViewModel.ActivateProfile(dialog.ActivatedFingerprint);
+        }
+        else if (dialog.ProfilesChanged)
         {
             // If the active profile was renamed, refresh the setup name
             var active = ViewModel.ProfileManager.GetProfile(ViewModel.ActiveFingerprint ?? "");

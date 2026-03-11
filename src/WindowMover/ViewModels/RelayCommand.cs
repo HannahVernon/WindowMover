@@ -1,6 +1,6 @@
 using System.Windows.Input;
 
-namespace WindowMover.App.ViewModels;
+namespace WindowMover.ViewModels;
 
 /// <summary>
 /// Simple ICommand implementation for MVVM binding.

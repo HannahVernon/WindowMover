@@ -1,10 +1,10 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Windows;
 using System.Windows.Forms;
-using WindowMover.App.ViewModels;
+using WindowMover.ViewModels;
 using WindowMover.Core.Services;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 /// <summary>
 /// Application entry point: single-instance enforcement, system tray, startup.

@@ -3,7 +3,7 @@ using System.Windows;
 using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
-namespace WindowMover.App.ViewModels;
+namespace WindowMover.ViewModels;
 
 /// <summary>
 /// Main ViewModel orchestrating the monitor layout editor.
@@ -94,6 +94,43 @@ public class MainViewModel : ViewModelBase, IDisposable
         _windowMovementWatcher.Start();
         SessionDetector.StartWatching();
         AppLogger.Instance.Info($"Initialized with setup: {CurrentSetupName}, {Monitors.Count} monitor(s)");
+    }
+
+    /// <summary>
+    /// Activates a specific profile by fingerprint: loads its rules into the UI and applies them.
+    /// </summary>
+    public void ActivateProfile(string fingerprint)
+    {
+        var profile = _profileManager.GetProfile(fingerprint);
+        if (profile == null) return;
+
+        AppLogger.Instance.Info($"Activating profile: {profile.Name} ({fingerprint})");
+
+        // Reload the UI with this profile's rules
+        foreach (var monitor in Monitors)
+            monitor.AssignedApps.Clear();
+        UnassignedApps.Clear();
+
+        LoadProfileRules(profile);
+        RefreshRunningApps();
+
+        // Apply window positions
+        if (_currentSetup != null)
+        {
+            _windowMovementWatcher.Suppressed = true;
+            try
+            {
+                _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+            }
+            finally
+            {
+                _windowMovementWatcher.Suppressed = false;
+            }
+        }
+
+        CurrentSetupName = profile.Name;
+        HasUnsavedChanges = false;
+        StatusMessage = $"Activated profile: {profile.Name}";
     }
 
     /// <summary>

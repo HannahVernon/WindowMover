@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace WindowMover.App;
+namespace WindowMover;
 
 public partial class RenameDialog : Window
 {
