@@ -39,7 +39,7 @@
                 <StackPanel Orientation="Vertical">
                     <TextBlock Text="WindowMover" FontSize="18" FontWeight="SemiBold"
                                Foreground="{StaticResource TextBrush}" />
-                    <TextBlock Text="{Binding CurrentSetupName, StringFormat='Current Setup: {0}'}"
+                    <TextBlock Text="{Binding CurrentSetupName, StringFormat='Active Profile: {0}'}"
                                FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
                 </StackPanel>
             </DockPanel>

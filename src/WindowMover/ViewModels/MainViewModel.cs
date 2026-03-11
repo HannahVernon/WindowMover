@@ -189,13 +189,20 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (profile != null)
             {
                 _activeFingerprint = profile.SetupFingerprint;
+                CurrentSetupName = profile.Name;
                 LoadProfileRules(profile);
                 StatusMessage = $"Loaded profile: {profile.Name}";
             }
             else
             {
-                _activeFingerprint = _currentSetup.Fingerprint;
-                StatusMessage = "New setup detected — assign apps to monitors";
+                // Auto-create a new profile from the current window layout
+                var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+                var newProfile = _profileManager.SaveProfile(_currentSetup, capturedRules);
+                _activeFingerprint = newProfile.SetupFingerprint;
+                CurrentSetupName = newProfile.Name;
+                LoadProfileRules(newProfile);
+                AppLogger.Instance.Info($"Auto-created profile: {newProfile.Name} with {capturedRules.Count} rule(s)");
+                StatusMessage = $"New profile created: {newProfile.Name}";
             }
 
             // Add running apps that aren't in any rule
