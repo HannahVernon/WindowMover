@@ -76,43 +76,17 @@ public class WindowManager
     public List<AppInfo> GetRunningApps()
     {
         var windows = GetVisibleWindows();
-        var groups = windows.GroupBy(w => w.ProcessName, StringComparer.OrdinalIgnoreCase);
-        var result = new List<AppInfo>();
-
-        foreach (var group in groups)
-        {
-            var windowList = group.ToList();
-            if (windowList.Count == 1)
+        return windows
+            .GroupBy(w => w.ProcessName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new AppInfo
             {
-                var w = windowList[0];
-                result.Add(new AppInfo
-                {
-                    ProcessName = w.ProcessName,
-                    DisplayName = GetFriendlyAppName(w),
-                    ExecutablePath = w.ExecutablePath,
-                    WindowCount = 1,
-                    ProcessId = w.ProcessId
-                });
-            }
-            else
-            {
-                // Multiple windows — use window title to distinguish each one
-                foreach (var w in windowList)
-                {
-                    var title = string.IsNullOrWhiteSpace(w.Title) ? $"{w.ProcessName} ({w.ProcessId})" : w.Title;
-                    result.Add(new AppInfo
-                    {
-                        ProcessName = w.ProcessName,
-                        DisplayName = title,
-                        ExecutablePath = w.ExecutablePath,
-                        WindowCount = 1,
-                        ProcessId = w.ProcessId
-                    });
-                }
-            }
-        }
-
-        return result.OrderBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+                ProcessName = g.Key,
+                DisplayName = GetFriendlyAppName(g.First()),
+                ExecutablePath = g.First().ExecutablePath,
+                WindowCount = g.Count()
+            })
+            .OrderBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
@@ -122,33 +96,27 @@ public class WindowManager
     public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
-        var rules = new List<WindowRule>();
-        var processCounts = windows
-            .GroupBy(w => w.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        var rules = new Dictionary<string, WindowRule>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var window in windows)
         {
+            if (rules.ContainsKey(window.ProcessName))
+                continue;
+
             var hMonitor = User32.MonitorFromWindow(window.Handle, User32.MONITOR_DEFAULTTONEAREST);
             var monitor = MatchMonitorByHandle(hMonitor, monitors);
             if (monitor == null) continue;
 
-            var isMulti = processCounts[window.ProcessName] > 1;
-            var displayName = isMulti
-                ? (string.IsNullOrWhiteSpace(window.Title) ? $"{window.ProcessName} ({window.ProcessId})" : window.Title)
-                : GetFriendlyAppName(window);
-
-            rules.Add(new WindowRule
+            rules[window.ProcessName] = new WindowRule
             {
                 ProcessName = window.ProcessName,
-                DisplayName = displayName,
+                DisplayName = GetFriendlyAppName(window),
                 ExecutablePath = window.ExecutablePath,
-                TargetMonitorId = monitor.DeviceId,
-                ProcessId = window.ProcessId
-            });
+                TargetMonitorId = monitor.DeviceId
+            };
         }
 
-        return rules;
+        return rules.Values.ToList();
     }
 
     /// <summary>
@@ -175,58 +143,17 @@ public class WindowManager
     {
         var windows = GetVisibleWindows();
 
-        // Group rules by process name to handle multi-window distribution
-        var rulesByProcess = rules
-            .GroupBy(r => r.ProcessName, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var ruleGroup in rulesByProcess)
+        foreach (var rule in rules)
         {
-            var processRules = ruleGroup.ToList();
+            var targetMonitor = monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (targetMonitor == null) continue;
+
             var matchingWindows = windows
-                .Where(w => w.ProcessName.Equals(ruleGroup.Key, StringComparison.OrdinalIgnoreCase))
-                .ToList();
+                .Where(w => w.ProcessName.Equals(rule.ProcessName, StringComparison.OrdinalIgnoreCase));
 
-            if (processRules.Count == 1)
+            foreach (var window in matchingWindows)
             {
-                // Single rule: move ALL windows of this process to one monitor
-                var targetMonitor = monitors.FirstOrDefault(m => m.DeviceId == processRules[0].TargetMonitorId);
-                if (targetMonitor == null) continue;
-
-                foreach (var window in matchingWindows)
-                    MoveWindowToMonitor(window.Handle, targetMonitor);
-            }
-            else
-            {
-                // Multiple rules: try PID matching first, then distribute remaining
-                var unmatched = new List<WindowInfo>(matchingWindows);
-
-                foreach (var rule in processRules.Where(r => r.ProcessId != 0))
-                {
-                    var targetMonitor = monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
-                    if (targetMonitor == null) continue;
-
-                    var window = unmatched.FirstOrDefault(w => w.ProcessId == rule.ProcessId);
-                    if (window != null)
-                    {
-                        MoveWindowToMonitor(window.Handle, targetMonitor);
-                        unmatched.Remove(window);
-                    }
-                }
-
-                // Distribute any remaining unmatched windows round-robin
-                if (unmatched.Count > 0)
-                {
-                    var targetMonitors = processRules
-                        .Select(r => monitors.FirstOrDefault(m => m.DeviceId == r.TargetMonitorId))
-                        .Where(m => m != null)
-                        .ToList();
-
-                    for (int i = 0; i < unmatched.Count; i++)
-                    {
-                        var target = targetMonitors[i % targetMonitors.Count];
-                        MoveWindowToMonitor(unmatched[i].Handle, target!);
-                    }
-                }
+                MoveWindowToMonitor(window.Handle, targetMonitor);
             }
         }
     }

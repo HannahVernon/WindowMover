@@ -230,18 +230,15 @@ public class MainViewModel : ViewModelBase, IDisposable
     private void RefreshRunningApps()
     {
         var runningApps = _windowManager.GetRunningApps();
-
-        // Build set of already-tracked apps by ProcessName + ProcessId
-        var assigned = new HashSet<string>(
+        var assignedProcesses = new HashSet<string>(
             Monitors.SelectMany(m => m.AssignedApps)
                 .Concat(UnassignedApps)
-                .Select(a => a.ProcessId != 0 ? $"{a.ProcessName}|{a.ProcessId}" : a.ProcessName),
+                .Select(a => a.ProcessName),
             StringComparer.OrdinalIgnoreCase);
 
         foreach (var app in runningApps)
         {
-            var key = app.ProcessId != 0 ? $"{app.ProcessName}|{app.ProcessId}" : app.ProcessName;
-            if (!assigned.Contains(key))
+            if (!assignedProcesses.Contains(app.ProcessName))
             {
                 UnassignedApps.Add(new AppRuleViewModel(app));
             }
@@ -388,18 +385,13 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (targetMonitorVm == null)
                 return;
 
-            // Get the PID for this specific window
-            uint pid = e.ProcessId;
-
-            // Try to find by PID first (for multi-window processes), then by process name
+            // Find existing rule for this process in any monitor column or unassigned
             AppRuleViewModel? existingApp = null;
             MonitorViewModel? sourceMonitor = null;
 
             foreach (var monitor in Monitors)
             {
                 existingApp = monitor.AssignedApps.FirstOrDefault(
-                    a => a.ProcessId == pid && pid != 0)
-                    ?? monitor.AssignedApps.FirstOrDefault(
                     a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
                 if (existingApp != null)
                 {
@@ -408,13 +400,8 @@ public class MainViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            if (existingApp == null)
-            {
-                existingApp = UnassignedApps.FirstOrDefault(
-                    a => a.ProcessId == pid && pid != 0)
-                    ?? UnassignedApps.FirstOrDefault(
-                    a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
-            }
+            existingApp ??= UnassignedApps.FirstOrDefault(
+                a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
 
             if (existingApp != null)
             {
