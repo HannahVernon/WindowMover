@@ -2,30 +2,23 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Rename Profile"
-        Width="360" Height="160"
+        Width="360" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="#1E1E2E"
         ShowInTaskbar="False"
         WindowStyle="ToolWindow">
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0" Text="Profile name:"
+    <StackPanel Margin="20">
+        <TextBlock Text="Profile name:"
                    Foreground="#A0A8C0" FontSize="13" Margin="0,0,0,8" />
 
-        <TextBox Grid.Row="1" x:Name="NameBox"
+        <TextBox x:Name="NameBox"
                  FontSize="14" Padding="6,4"
                  Background="#252538" Foreground="#E0E0E0"
                  BorderBrush="#5A5A8A" CaretBrush="#E0E0E0" />
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="0,12,0,0">
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,16,0,4">
             <Button Content="Cancel" IsCancel="True"
                     Padding="14,7" Margin="0,0,8,0"
                     Background="#3A3A5A" Foreground="#E0E0E0"
@@ -35,5 +28,5 @@
                     Background="#508CF0" Foreground="White"
                     BorderBrush="#6EA0FF" Cursor="Hand" />
         </StackPanel>
-    </Grid>
+    </StackPanel>
 </Window>

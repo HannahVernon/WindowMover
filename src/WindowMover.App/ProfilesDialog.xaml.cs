@@ -1,4 +1,5 @@
 using System.Windows;
+using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
 namespace WindowMover.App;
@@ -37,7 +38,11 @@ public partial class ProfilesDialog : Window
         ProfileList.ItemsSource = items;
     }
 
-    private void Rename_Click(object sender, RoutedEventArgs e)
+    private void Rename_Click(object sender, RoutedEventArgs e) => RenameSelected();
+
+    private void ProfileList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e) => RenameSelected();
+
+    private void RenameSelected()
     {
         if (ProfileList.SelectedItem is not ProfileListItem item) return;
 
@@ -65,6 +70,28 @@ public partial class ProfilesDialog : Window
             ProfilesChanged = true;
             RefreshList();
         }
+    }
+
+    private void NewProfile_Click(object sender, RoutedEventArgs e)
+    {
+        var nameDialog = new RenameDialog("New Profile") { Owner = this, Title = "New Profile" };
+        if (nameDialog.ShowDialog() != true || string.IsNullOrWhiteSpace(nameDialog.NewName))
+            return;
+
+        var name = nameDialog.NewName.Trim();
+
+        // Create the profile for the current monitor setup
+        var identifier = new MonitorIdentifier();
+        var monitors = identifier.GetConnectedMonitors();
+        var isRemote = SessionDetector.IsRemoteSession();
+        var setup = MonitorSetup.FromMonitors(monitors, isRemote);
+        setup.Name = name;
+
+        _profileManager.SaveProfile(setup, new List<WindowRule>());
+        _profileManager.RenameProfile(setup.Fingerprint, name);
+
+        ProfilesChanged = true;
+        RefreshList();
     }
 
     private void Close_Click(object sender, RoutedEventArgs e) => Close();

@@ -66,7 +66,7 @@ public partial class App : Application
             ContextMenuStrip = new ContextMenuStrip()
         };
 
-        _trayIcon.ContextMenuStrip.Items.Add("Open Settings", null, (_, _) => ShowMainWindow());
+        _trayIcon.ContextMenuStrip.Items.Add("Open WindowMover...", null, (_, _) => ShowMainWindow());
         _trayIcon.ContextMenuStrip.Items.Add("Apply Rules Now", null, (_, _) => ApplyRulesNow());
         _trayIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
         _trayIcon.ContextMenuStrip.Items.Add("Exit", null, (_, _) => ExitApplication());

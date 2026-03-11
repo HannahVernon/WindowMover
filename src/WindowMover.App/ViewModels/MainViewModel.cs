@@ -37,6 +37,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         ApplyNowCommand = new RelayCommand(ApplyNow);
         RefreshAppsCommand = new RelayCommand(RefreshApps);
         ResetCommand = new RelayCommand(Reset);
+        CaptureLayoutCommand = new RelayCommand(CaptureCurrentLayout);
 
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
@@ -80,6 +81,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public RelayCommand ApplyNowCommand { get; }
     public RelayCommand RefreshAppsCommand { get; }
     public RelayCommand ResetCommand { get; }
+    public RelayCommand CaptureLayoutCommand { get; }
 
     /// <summary>
     /// Initializes the ViewModel: detects monitors, loads profile, starts watching.
@@ -247,6 +249,31 @@ public class MainViewModel : ViewModelBase, IDisposable
         DetectAndLoadSetup();
         HasUnsavedChanges = false;
         StatusMessage = "Reset to saved profile";
+    }
+
+    private void CaptureCurrentLayout()
+    {
+        if (_currentSetup == null) return;
+
+        var rules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+        AppLogger.Instance.Info($"Captured current layout: {rules.Count} app(s)");
+
+        // Clear existing assignments and repopulate from captured state
+        foreach (var monitor in Monitors)
+            monitor.AssignedApps.Clear();
+        UnassignedApps.Clear();
+
+        foreach (var rule in rules)
+        {
+            var monitorVm = Monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (monitorVm != null)
+                monitorVm.AssignedApps.Add(new AppRuleViewModel(rule));
+            else
+                UnassignedApps.Add(new AppRuleViewModel(rule));
+        }
+
+        HasUnsavedChanges = true;
+        StatusMessage = $"Captured current layout — {rules.Count} app(s) mapped";
     }
 
     private void OnSetupChanged(object? sender, SetupChangedEventArgs e)
