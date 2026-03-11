@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <!-- Major.Minor are manual; Patch is auto-incremented by build.ps1 -->
-    <VersionPrefix>1.0.20</VersionPrefix>
+    <VersionPrefix>1.0.25</VersionPrefix>
     <FileVersion>$(VersionPrefix).0</FileVersion>
     <AssemblyVersion>$(VersionPrefix).0</AssemblyVersion>
     <InformationalVersion>$(VersionPrefix)</InformationalVersion>

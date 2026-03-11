@@ -84,7 +84,6 @@ public class WindowManager
             var windowList = group.ToList();
             if (windowList.Count == 1)
             {
-                // Single window — one entry, no PID suffix
                 var w = windowList[0];
                 result.Add(new AppInfo
                 {
@@ -97,13 +96,14 @@ public class WindowManager
             }
             else
             {
-                // Multiple windows — one entry per window with PID suffix on process name
+                // Multiple windows — use window title to distinguish each one
                 foreach (var w in windowList)
                 {
+                    var title = string.IsNullOrWhiteSpace(w.Title) ? $"{w.ProcessName} ({w.ProcessId})" : w.Title;
                     result.Add(new AppInfo
                     {
-                        ProcessName = $"{w.ProcessName} - {w.ProcessId}",
-                        DisplayName = GetFriendlyAppName(w),
+                        ProcessName = w.ProcessName,
+                        DisplayName = title,
                         ExecutablePath = w.ExecutablePath,
                         WindowCount = 1,
                         ProcessId = w.ProcessId
@@ -133,15 +133,15 @@ public class WindowManager
             var monitor = MatchMonitorByHandle(hMonitor, monitors);
             if (monitor == null) continue;
 
-            var baseName = GetFriendlyAppName(window);
-            var processLabel = processCounts[window.ProcessName] > 1
-                ? $"{window.ProcessName} - {window.ProcessId}"
-                : window.ProcessName;
+            var isMulti = processCounts[window.ProcessName] > 1;
+            var displayName = isMulti
+                ? (string.IsNullOrWhiteSpace(window.Title) ? $"{window.ProcessName} ({window.ProcessId})" : window.Title)
+                : GetFriendlyAppName(window);
 
             rules.Add(new WindowRule
             {
-                ProcessName = processLabel,
-                DisplayName = baseName,
+                ProcessName = window.ProcessName,
+                DisplayName = displayName,
                 ExecutablePath = window.ExecutablePath,
                 TargetMonitorId = monitor.DeviceId,
                 ProcessId = window.ProcessId
@@ -175,16 +175,9 @@ public class WindowManager
     {
         var windows = GetVisibleWindows();
 
-        // Strip " - PID" suffix to get base process name for matching
-        static string BaseProcessName(string name)
-        {
-            int dashIdx = name.LastIndexOf(" - ", StringComparison.Ordinal);
-            return dashIdx >= 0 ? name[..dashIdx] : name;
-        }
-
-        // Group rules by base process name to handle multi-window distribution
+        // Group rules by process name to handle multi-window distribution
         var rulesByProcess = rules
-            .GroupBy(r => BaseProcessName(r.ProcessName), StringComparer.OrdinalIgnoreCase);
+            .GroupBy(r => r.ProcessName, StringComparer.OrdinalIgnoreCase);
 
         foreach (var ruleGroup in rulesByProcess)
         {
