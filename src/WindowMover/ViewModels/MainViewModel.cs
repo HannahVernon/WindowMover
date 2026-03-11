@@ -275,6 +275,12 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         if (_currentSetup == null) return;
 
+        if (HasUnsavedChanges)
+        {
+            Save();
+            StatusMessage = "Changes saved automatically";
+        }
+
         _windowMovementWatcher.Suppressed = true;
         try
         {
@@ -285,7 +291,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (profile != null)
             {
                 _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
-                StatusMessage = "Rules applied";
+                StatusMessage = "Rules saved and applied";
             }
             else
             {
