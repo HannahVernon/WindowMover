@@ -85,10 +85,10 @@
                                     <StackPanel>
                                         <TextBlock Text="{Binding DisplayName}"
                                                    Foreground="{StaticResource TextBrush}"
-                                                   FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                   FontSize="13" TextWrapping="Wrap" />
                                         <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
                                                    Foreground="{StaticResource TextSecondaryBrush}"
-                                                   FontSize="11" />
+                                                   FontSize="11" TextWrapping="Wrap" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -175,10 +175,10 @@
                                                     <StackPanel>
                                                         <TextBlock Text="{Binding DisplayName}"
                                                                    Foreground="{StaticResource TextBrush}"
-                                                                   FontSize="13" TextTrimming="CharacterEllipsis" />
+                                                                   FontSize="13" TextWrapping="Wrap" />
                                                         <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
                                                                    Foreground="{StaticResource TextSecondaryBrush}"
-                                                                   FontSize="11" />
+                                                                   FontSize="11" TextWrapping="Wrap" />
                                                     </StackPanel>
                                                 </DockPanel>
                                             </Border>

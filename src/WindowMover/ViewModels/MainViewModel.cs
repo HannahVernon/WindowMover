@@ -388,13 +388,18 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (targetMonitorVm == null)
                 return;
 
-            // Find existing rule for this process in any monitor column or unassigned
+            // Get the PID for this specific window
+            uint pid = e.ProcessId;
+
+            // Try to find by PID first (for multi-window processes), then by process name
             AppRuleViewModel? existingApp = null;
             MonitorViewModel? sourceMonitor = null;
 
             foreach (var monitor in Monitors)
             {
                 existingApp = monitor.AssignedApps.FirstOrDefault(
+                    a => a.ProcessId == pid && pid != 0)
+                    ?? monitor.AssignedApps.FirstOrDefault(
                     a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
                 if (existingApp != null)
                 {
@@ -403,8 +408,13 @@ public class MainViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            existingApp ??= UnassignedApps.FirstOrDefault(
-                a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+            if (existingApp == null)
+            {
+                existingApp = UnassignedApps.FirstOrDefault(
+                    a => a.ProcessId == pid && pid != 0)
+                    ?? UnassignedApps.FirstOrDefault(
+                    a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (existingApp != null)
             {

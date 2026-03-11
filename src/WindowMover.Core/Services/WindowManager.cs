@@ -97,13 +97,13 @@ public class WindowManager
             }
             else
             {
-                // Multiple windows — one entry per window with PID suffix
+                // Multiple windows — one entry per window with PID suffix on process name
                 foreach (var w in windowList)
                 {
                     result.Add(new AppInfo
                     {
-                        ProcessName = w.ProcessName,
-                        DisplayName = $"{GetFriendlyAppName(w)} - {w.ProcessId}",
+                        ProcessName = $"{w.ProcessName} - {w.ProcessId}",
+                        DisplayName = GetFriendlyAppName(w),
                         ExecutablePath = w.ExecutablePath,
                         WindowCount = 1,
                         ProcessId = w.ProcessId
@@ -134,14 +134,14 @@ public class WindowManager
             if (monitor == null) continue;
 
             var baseName = GetFriendlyAppName(window);
-            var displayName = processCounts[window.ProcessName] > 1
-                ? $"{baseName} - {window.ProcessId}"
-                : baseName;
+            var processLabel = processCounts[window.ProcessName] > 1
+                ? $"{window.ProcessName} - {window.ProcessId}"
+                : window.ProcessName;
 
             rules.Add(new WindowRule
             {
-                ProcessName = window.ProcessName,
-                DisplayName = displayName,
+                ProcessName = processLabel,
+                DisplayName = baseName,
                 ExecutablePath = window.ExecutablePath,
                 TargetMonitorId = monitor.DeviceId,
                 ProcessId = window.ProcessId
@@ -175,9 +175,16 @@ public class WindowManager
     {
         var windows = GetVisibleWindows();
 
-        // Group rules by process name to handle multi-window distribution
+        // Strip " - PID" suffix to get base process name for matching
+        static string BaseProcessName(string name)
+        {
+            int dashIdx = name.LastIndexOf(" - ", StringComparison.Ordinal);
+            return dashIdx >= 0 ? name[..dashIdx] : name;
+        }
+
+        // Group rules by base process name to handle multi-window distribution
         var rulesByProcess = rules
-            .GroupBy(r => r.ProcessName, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(r => BaseProcessName(r.ProcessName), StringComparer.OrdinalIgnoreCase);
 
         foreach (var ruleGroup in rulesByProcess)
         {
