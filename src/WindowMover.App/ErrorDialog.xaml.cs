@@ -24,9 +24,9 @@ public partial class ErrorDialog : Window
             var today = Path.Combine(logDir, $"WindowMover-{DateTime.Now:yyyy-MM-dd}.log");
 
             if (File.Exists(today))
-                Process.Start("notepad.exe", today);
+                Process.Start(new ProcessStartInfo("notepad.exe", today) { UseShellExecute = true });
             else if (Directory.Exists(logDir))
-                Process.Start("explorer.exe", logDir);
+                Process.Start(new ProcessStartInfo(logDir) { UseShellExecute = true });
             else
                 System.Windows.MessageBox.Show("No log files found yet.", "WindowMover");
         }

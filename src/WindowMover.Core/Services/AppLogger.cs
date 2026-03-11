@@ -15,6 +15,7 @@ public sealed class AppLogger : IDisposable
     private readonly BlockingCollection<string> _queue = new(1000);
     private readonly Thread _writerThread;
     private readonly CancellationTokenSource _cts = new();
+    private volatile bool _disposed;
 
     private AppLogger()
     {
@@ -30,7 +31,7 @@ public sealed class AppLogger : IDisposable
         };
         _writerThread.Start();
 
-        PurgOldLogs();
+        PurgeOldLogs();
     }
 
     public void Info(string message) => Enqueue("INFO", message);
@@ -43,8 +44,9 @@ public sealed class AppLogger : IDisposable
 
     private void Enqueue(string level, string message)
     {
+        if (_disposed) return;
         var line = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}";
-        _queue.TryAdd(line);
+        try { _queue.TryAdd(line, 50); } catch (ObjectDisposedException) { }
     }
 
     private void ProcessQueue()
@@ -64,7 +66,7 @@ public sealed class AppLogger : IDisposable
         catch (OperationCanceledException) { }
     }
 
-    private void PurgOldLogs()
+    private void PurgeOldLogs()
     {
         try
         {
@@ -80,9 +82,11 @@ public sealed class AppLogger : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _queue.CompleteAdding();
-        _cts.Cancel();
         _writerThread.Join(2000);
+        _cts.Cancel();
         _cts.Dispose();
         _queue.Dispose();
     }
