@@ -27,5 +27,11 @@ public class WindowRule
     /// </summary>
     public string DisplayName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Optional Process ID for distinguishing multiple windows of the same process.
+    /// Used at runtime; treated as a hint when loading saved rules.
+    /// </summary>
+    public uint ProcessId { get; set; }
+
     public override string ToString() => $"{DisplayName} → {TargetMonitorId}";
 }

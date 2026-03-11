@@ -12,6 +12,7 @@ public class AppRuleViewModel : ViewModelBase
     private string _processName = string.Empty;
     private string? _executablePath;
     private int _windowCount;
+    private uint _processId;
     private bool _isDragging;
 
     public AppRuleViewModel() { }
@@ -22,6 +23,7 @@ public class AppRuleViewModel : ViewModelBase
         ProcessName = appInfo.ProcessName;
         ExecutablePath = appInfo.ExecutablePath;
         WindowCount = appInfo.WindowCount;
+        ProcessId = appInfo.ProcessId;
     }
 
     public AppRuleViewModel(WindowRule rule)
@@ -29,6 +31,7 @@ public class AppRuleViewModel : ViewModelBase
         DisplayName = rule.DisplayName;
         ProcessName = rule.ProcessName;
         ExecutablePath = rule.ExecutablePath;
+        ProcessId = rule.ProcessId;
     }
 
     public string DisplayName
@@ -55,6 +58,12 @@ public class AppRuleViewModel : ViewModelBase
         set => SetProperty(ref _windowCount, value);
     }
 
+    public uint ProcessId
+    {
+        get => _processId;
+        set => SetProperty(ref _processId, value);
+    }
+
     public bool IsDragging
     {
         get => _isDragging;
@@ -69,6 +78,7 @@ public class AppRuleViewModel : ViewModelBase
         ProcessName = ProcessName,
         ExecutablePath = ExecutablePath,
         TargetMonitorId = targetMonitorId,
-        DisplayName = DisplayName
+        DisplayName = DisplayName,
+        ProcessId = ProcessId
     };
 }

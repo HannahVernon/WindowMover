@@ -230,15 +230,18 @@ public class MainViewModel : ViewModelBase, IDisposable
     private void RefreshRunningApps()
     {
         var runningApps = _windowManager.GetRunningApps();
-        var assignedProcesses = new HashSet<string>(
+
+        // Build set of already-tracked apps by ProcessName + ProcessId
+        var assigned = new HashSet<string>(
             Monitors.SelectMany(m => m.AssignedApps)
                 .Concat(UnassignedApps)
-                .Select(a => a.ProcessName),
+                .Select(a => a.ProcessId != 0 ? $"{a.ProcessName}|{a.ProcessId}" : a.ProcessName),
             StringComparer.OrdinalIgnoreCase);
 
         foreach (var app in runningApps)
         {
-            if (!assignedProcesses.Contains(app.ProcessName))
+            var key = app.ProcessId != 0 ? $"{app.ProcessName}|{app.ProcessId}" : app.ProcessName;
+            if (!assigned.Contains(key))
             {
                 UnassignedApps.Add(new AppRuleViewModel(app));
             }
