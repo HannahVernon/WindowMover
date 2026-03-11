@@ -19,6 +19,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private string _currentSetupName = "Detecting...";
     private string _statusMessage = string.Empty;
     private MonitorSetup? _currentSetup;
+    private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
     private bool _disposed;
 
@@ -50,7 +51,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     // Properties
     public ProfileManager ProfileManager => _profileManager;
-    public string? ActiveFingerprint => _currentSetup?.Fingerprint;
+    public string? ActiveFingerprint => _activeFingerprint;
 
     public string CurrentSetupName
     {
@@ -106,6 +107,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         AppLogger.Instance.Info($"Activating profile: {profile.Name} ({fingerprint})");
 
+        _activeFingerprint = fingerprint;
         // Reload the UI with this profile's rules
         foreach (var monitor in Monitors)
             monitor.AssignedApps.Clear();
@@ -186,11 +188,13 @@ public class MainViewModel : ViewModelBase, IDisposable
             var profile = _profileManager.GetProfile(_currentSetup);
             if (profile != null)
             {
+                _activeFingerprint = profile.SetupFingerprint;
                 LoadProfileRules(profile);
                 StatusMessage = $"Loaded profile: {profile.Name}";
             }
             else
             {
+                _activeFingerprint = _currentSetup.Fingerprint;
                 StatusMessage = "New setup detected — assign apps to monitors";
             }
 
@@ -236,15 +240,28 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     private void Save()
     {
-        if (_currentSetup == null) return;
+        if (_currentSetup == null || _activeFingerprint == null) return;
 
         var rules = Monitors
             .SelectMany(m => m.AssignedApps.Select(a => a.ToRule(m.DeviceId)))
             .ToList();
 
-        _profileManager.SaveProfile(_currentSetup, rules);
-        HasUnsavedChanges = false;
-        StatusMessage = $"Profile saved: {_currentSetup.Name}";
+        // Update the active profile's rules (which may differ from _currentSetup.Fingerprint)
+        var existingProfile = _profileManager.GetProfile(_activeFingerprint);
+        if (existingProfile != null)
+        {
+            _profileManager.UpdateRules(_activeFingerprint, rules);
+            HasUnsavedChanges = false;
+            StatusMessage = $"Profile saved: {existingProfile.Name}";
+        }
+        else
+        {
+            // Fallback: create a new profile from the current setup
+            _profileManager.SaveProfile(_currentSetup, rules);
+            _activeFingerprint = _currentSetup.Fingerprint;
+            HasUnsavedChanges = false;
+            StatusMessage = $"Profile saved: {_currentSetup.Name}";
+        }
     }
 
     private void ApplyNow()
@@ -254,7 +271,10 @@ public class MainViewModel : ViewModelBase, IDisposable
         _windowMovementWatcher.Suppressed = true;
         try
         {
-            var profile = _profileManager.GetProfile(_currentSetup);
+            var profile = _activeFingerprint != null
+                ? _profileManager.GetProfile(_activeFingerprint)
+                : _profileManager.GetProfile(_currentSetup);
+
             if (profile != null)
             {
                 _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
