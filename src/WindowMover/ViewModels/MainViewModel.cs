@@ -357,15 +357,18 @@ public class MainViewModel : ViewModelBase, IDisposable
                 DetectAndLoadSetup();
 
                 // Auto-apply rules if a profile exists for the new setup
-                var profile = _profileManager.GetProfile(e.NewSetup);
-                if (profile != null)
+                if (_currentSetup != null)
                 {
-                    _windowManager.ApplyRules(profile.Rules, e.NewSetup.Monitors);
-                    StatusMessage = $"Setup changed to '{e.NewSetup.Name}' — rules applied";
-                }
-                else
-                {
-                    StatusMessage = $"New setup detected: {e.NewSetup.Name}";
+                    var profile = _profileManager.GetProfile(_currentSetup);
+                    if (profile != null)
+                    {
+                        _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+                        StatusMessage = $"Setup changed to '{_currentSetup.Name}' — rules applied";
+                    }
+                    else
+                    {
+                        StatusMessage = $"New setup detected: {_currentSetup.Name}";
+                    }
                 }
             }
             finally

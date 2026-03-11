@@ -62,14 +62,30 @@ public sealed class AppLogger : IDisposable
     {
         try
         {
-            foreach (var line in _queue.GetConsumingEnumerable(_cts.Token))
+            StreamWriter? writer = null;
+            string? currentPath = null;
+
+            try
             {
-                try
+                foreach (var line in _queue.GetConsumingEnumerable())
                 {
-                    var path = Path.Combine(_logDir, $"WindowMover-{DateTime.Now:yyyy-MM-dd}.log");
-                    File.AppendAllText(path, line + Environment.NewLine);
+                    try
+                    {
+                        var path = Path.Combine(_logDir, $"WindowMover-{DateTime.Now:yyyy-MM-dd}.log");
+                        if (path != currentPath)
+                        {
+                            writer?.Dispose();
+                            writer = new StreamWriter(path, append: true) { AutoFlush = true };
+                            currentPath = path;
+                        }
+                        writer!.WriteLine(line);
+                    }
+                    catch { /* don't crash the app over logging */ }
                 }
-                catch { /* don't crash the app over logging */ }
+            }
+            finally
+            {
+                writer?.Dispose();
             }
         }
         catch (OperationCanceledException) { }
@@ -95,7 +111,6 @@ public sealed class AppLogger : IDisposable
         _disposed = true;
         _queue.CompleteAdding();
         _writerThread.Join(2000);
-        _cts.Cancel();
         _cts.Dispose();
         _queue.Dispose();
     }
