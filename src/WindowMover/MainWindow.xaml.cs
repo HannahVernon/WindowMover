@@ -229,6 +229,40 @@ public partial class MainWindow : Window
         }
     }
 
+    private void MoveAppUp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is AppRuleViewModel app)
+        {
+            foreach (var monitor in ViewModel.Monitors)
+            {
+                int index = monitor.AssignedApps.IndexOf(app);
+                if (index > 0)
+                {
+                    monitor.AssignedApps.Move(index, index - 1);
+                    ViewModel.HasUnsavedChanges = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    private void MoveAppDown_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is AppRuleViewModel app)
+        {
+            foreach (var monitor in ViewModel.Monitors)
+            {
+                int index = monitor.AssignedApps.IndexOf(app);
+                if (index >= 0 && index < monitor.AssignedApps.Count - 1)
+                {
+                    monitor.AssignedApps.Move(index, index + 1);
+                    ViewModel.HasUnsavedChanges = true;
+                    break;
+                }
+            }
+        }
+    }
+
     private MonitorViewModel? FindParentMonitorViewModel(DependencyObject child)
     {
         var current = child;

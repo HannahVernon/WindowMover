@@ -138,14 +138,15 @@ public class WindowManager
 
     /// <summary>
     /// Applies window rules: moves each matching app's windows to its target monitor.
-    /// Preserves the original z-order (alt-tab order) after all windows are repositioned.
+    /// Sets z-order based on rule list order: first rule per monitor = topmost window.
+    /// Windows without rules retain their original relative z-order.
     /// </summary>
     public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
 
-        // EnumWindows returns windows in z-order (top to bottom) — capture before moving
-        var originalZOrder = windows.Select(w => w.Handle).ToList();
+        // Track which handles are managed by rules (for z-order pass)
+        var managedHandles = new HashSet<IntPtr>();
 
         foreach (var rule in rules)
         {
@@ -158,15 +159,22 @@ public class WindowManager
             foreach (var window in matchingWindows)
             {
                 MoveWindowToMonitor(window.Handle, targetMonitor);
+                managedHandles.Add(window.Handle);
             }
         }
 
-        // Restore original z-order: iterate bottom-to-top, bringing each to top,
-        // so the originally topmost window ends up on top last.
-        for (int i = originalZOrder.Count - 1; i >= 0; i--)
+        // Apply z-order from rule list order (first rule = topmost).
+        // Iterate rules in reverse so the first rule's windows end up on top last.
+        for (int i = rules.Count - 1; i >= 0; i--)
         {
-            User32.SetWindowPos(originalZOrder[i], IntPtr.Zero, 0, 0, 0, 0,
-                User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);
+            var matchingWindows = windows
+                .Where(w => w.ProcessName.Equals(rules[i].ProcessName, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var window in matchingWindows)
+            {
+                User32.SetWindowPos(window.Handle, IntPtr.Zero, 0, 0, 0, 0,
+                    User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);
+            }
         }
     }
 
