@@ -138,10 +138,14 @@ public class WindowManager
 
     /// <summary>
     /// Applies window rules: moves each matching app's windows to its target monitor.
+    /// Preserves the original z-order (alt-tab order) after all windows are repositioned.
     /// </summary>
     public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
+
+        // EnumWindows returns windows in z-order (top to bottom) — capture before moving
+        var originalZOrder = windows.Select(w => w.Handle).ToList();
 
         foreach (var rule in rules)
         {
@@ -155,6 +159,14 @@ public class WindowManager
             {
                 MoveWindowToMonitor(window.Handle, targetMonitor);
             }
+        }
+
+        // Restore original z-order: iterate bottom-to-top, bringing each to top,
+        // so the originally topmost window ends up on top last.
+        for (int i = originalZOrder.Count - 1; i >= 0; i--)
+        {
+            User32.SetWindowPos(originalZOrder[i], IntPtr.Zero, 0, 0, 0, 0,
+                User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);
         }
     }
 
