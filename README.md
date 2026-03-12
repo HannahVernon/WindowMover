@@ -1,6 +1,14 @@
 # WindowMover
 
-**Automatically move application windows to the right monitor** across multiple multi-monitor setups — home dock, work dock, laptop-only, and RDP sessions.
+**Automatically move application windows to their assigned monitor** across multiple multi-monitor 
+setups — home dock, work dock, laptop-only, and RDP sessions.
+
+I almost always have multiple monitors attached to my laptop, although I do occasionally work without 
+any monitors attached.  At home I have a dock with two monitors attached, at work I have a similar 
+setup using a different dock and two different monitors.  Every time I switch from home to work, or
+vice-versa, all the apps I have open pile up on the main monitor necessitating dragging-and-dropping
+open windows to the monitors where they "live".  This software automates that process, through the 
+following features:
 
 ## Features
 
@@ -22,7 +30,7 @@ Profiles are stored in `%APPDATA%\WindowMover\profiles\`.
 
 ## Building
 
-### Prerequisites
+### Development Prerequisites
 
 | Requirement | Version | Notes |
 |---|---|---|
@@ -30,7 +38,7 @@ Profiles are stored in `%APPDATA%\WindowMover\profiles\`.
 | [Visual Studio 2022](https://visualstudio.microsoft.com/) | 17.8+ | With the **.NET desktop development** workload (or use the CLI alone) |
 | [Inno Setup 6](https://jrsoftware.org/isdl.php) | 6.x | Required only for building the installer |
 
-> **Inno Setup** must be installed to the default location (`C:\Program Files (x86)\Inno Setup 6` or `C:\Program Files\Inno Setup 6`) so the build script can find `ISCC.exe`.
+> **Inno Setup** must be installed to the default location (`%ProgramFiles%\Inno Setup 6` or `%ProgramFiles(x86)%\Inno Setup 6`) so the build script can find `ISCC.exe`.
 
 ### Quick build (recommended)
 
@@ -127,4 +135,4 @@ Profiles are auto-saved as JSON files:
 
 ## License
 
-MIT
+WindowMover is free and open source under the MIT license - see the LICENSE file for details.
