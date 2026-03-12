@@ -21,6 +21,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private MonitorSetup? _currentSetup;
     private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
+    private bool _isTopmost;
     private bool _disposed;
 
     public MainViewModel()
@@ -76,6 +77,12 @@ public class MainViewModel : ViewModelBase, IDisposable
     }
 
     public string UnsavedIndicator => HasUnsavedChanges ? "Unsaved Changes" : "No Unsaved Changes";
+
+    public bool IsTopmost
+    {
+        get => _isTopmost;
+        set => SetProperty(ref _isTopmost, value);
+    }
 
     // Commands
     public RelayCommand SaveCommand { get; }
@@ -281,6 +288,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             StatusMessage = "Changes saved automatically";
         }
 
+        IsTopmost = true;
         _windowMovementWatcher.Suppressed = true;
         try
         {
@@ -305,6 +313,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         finally
         {
             _windowMovementWatcher.Suppressed = false;
+            IsTopmost = false;
         }
     }
 

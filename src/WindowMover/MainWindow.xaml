@@ -10,6 +10,7 @@
         Background="{StaticResource BackgroundBrush}"
         WindowStartupLocation="CenterScreen"
         Icon="Assets/icon.ico"
+        Topmost="{Binding IsTopmost}"
         Closing="Window_Closing">
 
     <Window.DataContext>
