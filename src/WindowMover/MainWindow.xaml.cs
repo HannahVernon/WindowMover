@@ -170,7 +170,10 @@ public partial class MainWindow : Window
             return;
 
         MonitorViewModel? sourceMonitor = e.Data.GetData("SourceMonitor") as MonitorViewModel;
-        ViewModel.MoveApp(app, sourceMonitor, targetMonitor);
+
+        // Determine insertion index from drop position within the list
+        int insertIndex = GetDropIndex(border, e, targetMonitor, app, sourceMonitor);
+        ViewModel.MoveApp(app, sourceMonitor, targetMonitor, insertIndex);
 
         e.Handled = true;
     }
@@ -271,6 +274,64 @@ public partial class MainWindow : Window
             if (current is FrameworkElement fe && fe.Tag is MonitorViewModel monitorVm)
                 return monitorVm;
             current = VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Determines the insertion index for a dropped app card by finding which
+    /// existing card the cursor is closest to within the monitor's ListBox.
+    /// </summary>
+    private static int GetDropIndex(Border monitorBorder, DragEventArgs e,
+        MonitorViewModel targetMonitor, AppRuleViewModel draggedApp, MonitorViewModel? sourceMonitor)
+    {
+        // Find the ListBox inside this monitor's border
+        var listBox = FindVisualChild<System.Windows.Controls.ListBox>(monitorBorder);
+        if (listBox == null)
+            return targetMonitor.AssignedApps.Count;
+
+        var dropPoint = e.GetPosition(listBox);
+
+        // Walk each ListBoxItem to find where the cursor falls
+        for (int i = 0; i < listBox.Items.Count; i++)
+        {
+            if (listBox.ItemContainerGenerator.ContainerFromIndex(i) is not System.Windows.Controls.ListBoxItem container)
+                continue;
+
+            var itemTop = container.TranslatePoint(new System.Windows.Point(0, 0), listBox).Y;
+            var itemMidpoint = itemTop + container.ActualHeight / 2;
+
+            if (dropPoint.Y < itemMidpoint)
+            {
+                // Adjust index when reordering within the same monitor:
+                // removing the item first shifts indices down
+                if (sourceMonitor == targetMonitor)
+                {
+                    int currentIndex = targetMonitor.AssignedApps.IndexOf(draggedApp);
+                    if (currentIndex >= 0 && currentIndex < i)
+                        return i - 1;
+                }
+                return i;
+            }
+        }
+
+        // Dropped below all items — append to end
+        int count = targetMonitor.AssignedApps.Count;
+        if (sourceMonitor == targetMonitor)
+            count--; // item will be removed first
+        return count;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T found)
+                return found;
+            var result = FindVisualChild<T>(child);
+            if (result != null)
+                return result;
         }
         return null;
     }

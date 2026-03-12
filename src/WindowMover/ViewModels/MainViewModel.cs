@@ -145,7 +145,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Moves an app from one container to another (drag-and-drop handler).
     /// </summary>
-    public void MoveApp(AppRuleViewModel app, MonitorViewModel? sourceMonitor, MonitorViewModel? targetMonitor)
+    public void MoveApp(AppRuleViewModel app, MonitorViewModel? sourceMonitor, MonitorViewModel? targetMonitor, int insertIndex = -1)
     {
         // Remove from source
         if (sourceMonitor != null)
@@ -153,11 +153,18 @@ public class MainViewModel : ViewModelBase, IDisposable
         else
             UnassignedApps.Remove(app);
 
-        // Add to target
+        // Add to target at the requested position
         if (targetMonitor != null)
-            targetMonitor.AssignedApps.Add(app);
+        {
+            if (insertIndex >= 0 && insertIndex <= targetMonitor.AssignedApps.Count)
+                targetMonitor.AssignedApps.Insert(insertIndex, app);
+            else
+                targetMonitor.AssignedApps.Add(app);
+        }
         else
+        {
             UnassignedApps.Add(app);
+        }
 
         HasUnsavedChanges = true;
     }
