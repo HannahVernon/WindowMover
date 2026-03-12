@@ -171,14 +171,17 @@
                                                         <Button Content="▲" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
+                                                                ToolTip="Move up (higher z-order)"
                                                                 Click="MoveAppUp_Click" Tag="{Binding}" />
                                                         <Button Content="✕" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
+                                                                ToolTip="Unassign from this monitor"
                                                                 Click="RemoveApp_Click" Tag="{Binding}" />
                                                         <Button Content="▼" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
+                                                                ToolTip="Move down (lower z-order)"
                                                                 Click="MoveAppDown_Click" Tag="{Binding}" />
                                                     </StackPanel>
                                                     <StackPanel>
