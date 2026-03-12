@@ -81,6 +81,7 @@ internal static partial class User32
 
     public const int SW_RESTORE = 9;
     public const int SW_MAXIMIZE = 3;
+    public const int SW_MINIMIZE = 6;
     public const int SW_SHOWNORMAL = 1;
 
     public const uint MONITOR_DEFAULTTONEAREST = 2;
@@ -133,6 +134,7 @@ internal static partial class User32
     }
 
     // showCmd values
+    public const uint SW_SHOWMINIMIZED = 2;
     public const uint SW_SHOWMAXIMIZED = 3;
     public const uint SW_SHOWNORMAL_UINT = 1;
 

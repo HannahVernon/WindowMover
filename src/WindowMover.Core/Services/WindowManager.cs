@@ -160,7 +160,8 @@ public class WindowManager
 
     /// <summary>
     /// Moves a window to the center of the specified monitor's work area.
-    /// Handles maximized windows by restoring first, then moving, then re-maximizing.
+    /// Handles maximized and minimized windows by restoring first, then moving,
+    /// then re-applying the original state.
     /// </summary>
     public static void MoveWindowToMonitor(IntPtr hWnd, MonitorInfo targetMonitor)
     {
@@ -168,10 +169,10 @@ public class WindowManager
         User32.GetWindowPlacement(hWnd, ref placement);
 
         bool wasMaximized = placement.showCmd == User32.SW_SHOWMAXIMIZED;
+        bool wasMinimized = placement.showCmd == User32.SW_SHOWMINIMIZED;
 
-        if (wasMaximized)
+        if (wasMaximized || wasMinimized)
         {
-            // Restore the window first so we can move it
             User32.ShowWindow(hWnd, User32.SW_RESTORE);
         }
 
@@ -195,8 +196,11 @@ public class WindowManager
 
         if (wasMaximized)
         {
-            // Re-maximize on the new monitor
             User32.ShowWindow(hWnd, User32.SW_MAXIMIZE);
+        }
+        else if (wasMinimized)
+        {
+            User32.ShowWindow(hWnd, User32.SW_MINIMIZE);
         }
     }
 
