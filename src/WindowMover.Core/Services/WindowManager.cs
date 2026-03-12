@@ -165,6 +165,10 @@ public class WindowManager
 
         // Apply z-order from rule list order (first rule = topmost).
         // Iterate rules in reverse so the first rule's windows end up on top last.
+        // Use the TOPMOST/NOTOPMOST trick: SetWindowPos with HWND_TOP is unreliable
+        // for cross-process windows, but HWND_TOPMOST is always honored. We briefly
+        // set each window as topmost, then immediately remove the flag.
+        var zOrderFlags = User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE;
         for (int i = rules.Count - 1; i >= 0; i--)
         {
             var matchingWindows = windows
@@ -172,8 +176,10 @@ public class WindowManager
 
             foreach (var window in matchingWindows)
             {
-                User32.SetWindowPos(window.Handle, IntPtr.Zero, 0, 0, 0, 0,
-                    User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE);
+                User32.SetWindowPos(window.Handle, User32.HWND_TOPMOST,
+                    0, 0, 0, 0, zOrderFlags);
+                User32.SetWindowPos(window.Handle, User32.HWND_NOTOPMOST,
+                    0, 0, 0, 0, zOrderFlags);
             }
         }
     }

@@ -80,6 +80,9 @@ internal static partial class User32
     public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_SHOWWINDOW = 0x0040;
 
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new(-2);
+
     public const int SW_RESTORE = 9;
     public const int SW_MAXIMIZE = 3;
     public const int SW_MINIMIZE = 6;
