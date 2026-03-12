@@ -36,7 +36,8 @@ public class MonitorIdentifier
             }
         }
 
-        return result;
+        // Sort left-to-right (then top-to-bottom) to match Windows Settings display arrangement
+        return result.OrderBy(m => m.Bounds.X).ThenBy(m => m.Bounds.Y).ToList();
     }
 
     private static List<EdidData> GetMonitorsFromWmi()

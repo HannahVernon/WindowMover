@@ -77,10 +77,15 @@ internal static partial class User32
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_SHOWWINDOW = 0x0040;
+
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new(-2);
 
     public const int SW_RESTORE = 9;
     public const int SW_MAXIMIZE = 3;
+    public const int SW_MINIMIZE = 6;
     public const int SW_SHOWNORMAL = 1;
 
     public const uint MONITOR_DEFAULTTONEAREST = 2;
@@ -133,6 +138,7 @@ internal static partial class User32
     }
 
     // showCmd values
+    public const uint SW_SHOWMINIMIZED = 2;
     public const uint SW_SHOWMAXIMIZED = 3;
     public const uint SW_SHOWNORMAL_UINT = 1;
 
