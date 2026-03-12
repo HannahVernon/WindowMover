@@ -21,6 +21,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private MonitorSetup? _currentSetup;
     private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
+    private bool _isTopmost;
     private bool _disposed;
 
     public MainViewModel()
@@ -76,6 +77,12 @@ public class MainViewModel : ViewModelBase, IDisposable
     }
 
     public string UnsavedIndicator => HasUnsavedChanges ? "Unsaved Changes" : "No Unsaved Changes";
+
+    public bool IsTopmost
+    {
+        get => _isTopmost;
+        set => SetProperty(ref _isTopmost, value);
+    }
 
     // Commands
     public RelayCommand SaveCommand { get; }
@@ -138,7 +145,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Moves an app from one container to another (drag-and-drop handler).
     /// </summary>
-    public void MoveApp(AppRuleViewModel app, MonitorViewModel? sourceMonitor, MonitorViewModel? targetMonitor)
+    public void MoveApp(AppRuleViewModel app, MonitorViewModel? sourceMonitor, MonitorViewModel? targetMonitor, int insertIndex = -1)
     {
         // Remove from source
         if (sourceMonitor != null)
@@ -146,11 +153,18 @@ public class MainViewModel : ViewModelBase, IDisposable
         else
             UnassignedApps.Remove(app);
 
-        // Add to target
+        // Add to target at the requested position
         if (targetMonitor != null)
-            targetMonitor.AssignedApps.Add(app);
+        {
+            if (insertIndex >= 0 && insertIndex <= targetMonitor.AssignedApps.Count)
+                targetMonitor.AssignedApps.Insert(insertIndex, app);
+            else
+                targetMonitor.AssignedApps.Add(app);
+        }
         else
+        {
             UnassignedApps.Add(app);
+        }
 
         HasUnsavedChanges = true;
     }
@@ -281,6 +295,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             StatusMessage = "Changes saved automatically";
         }
 
+        IsTopmost = true;
         _windowMovementWatcher.Suppressed = true;
         try
         {
@@ -305,6 +320,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         finally
         {
             _windowMovementWatcher.Suppressed = false;
+            IsTopmost = false;
         }
     }
 

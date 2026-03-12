@@ -138,10 +138,15 @@ public class WindowManager
 
     /// <summary>
     /// Applies window rules: moves each matching app's windows to its target monitor.
+    /// Sets z-order based on rule list order: first rule per monitor = topmost window.
+    /// Windows without rules retain their original relative z-order.
     /// </summary>
     public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
+
+        // Track which handles are managed by rules (for z-order pass)
+        var managedHandles = new HashSet<IntPtr>();
 
         foreach (var rule in rules)
         {
@@ -154,13 +159,35 @@ public class WindowManager
             foreach (var window in matchingWindows)
             {
                 MoveWindowToMonitor(window.Handle, targetMonitor);
+                managedHandles.Add(window.Handle);
+            }
+        }
+
+        // Apply z-order from rule list order (first rule = topmost).
+        // Iterate rules in reverse so the first rule's windows end up on top last.
+        // Use the TOPMOST/NOTOPMOST trick: SetWindowPos with HWND_TOP is unreliable
+        // for cross-process windows, but HWND_TOPMOST is always honored. We briefly
+        // set each window as topmost, then immediately remove the flag.
+        var zOrderFlags = User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE;
+        for (int i = rules.Count - 1; i >= 0; i--)
+        {
+            var matchingWindows = windows
+                .Where(w => w.ProcessName.Equals(rules[i].ProcessName, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var window in matchingWindows)
+            {
+                User32.SetWindowPos(window.Handle, User32.HWND_TOPMOST,
+                    0, 0, 0, 0, zOrderFlags);
+                User32.SetWindowPos(window.Handle, User32.HWND_NOTOPMOST,
+                    0, 0, 0, 0, zOrderFlags);
             }
         }
     }
 
     /// <summary>
     /// Moves a window to the center of the specified monitor's work area.
-    /// Handles maximized windows by restoring first, then moving, then re-maximizing.
+    /// Handles maximized and minimized windows by restoring first, then moving,
+    /// then re-applying the original state.
     /// </summary>
     public static void MoveWindowToMonitor(IntPtr hWnd, MonitorInfo targetMonitor)
     {
@@ -168,10 +195,10 @@ public class WindowManager
         User32.GetWindowPlacement(hWnd, ref placement);
 
         bool wasMaximized = placement.showCmd == User32.SW_SHOWMAXIMIZED;
+        bool wasMinimized = placement.showCmd == User32.SW_SHOWMINIMIZED;
 
-        if (wasMaximized)
+        if (wasMaximized || wasMinimized)
         {
-            // Restore the window first so we can move it
             User32.ShowWindow(hWnd, User32.SW_RESTORE);
         }
 
@@ -195,8 +222,11 @@ public class WindowManager
 
         if (wasMaximized)
         {
-            // Re-maximize on the new monitor
             User32.ShowWindow(hWnd, User32.SW_MAXIMIZE);
+        }
+        else if (wasMinimized)
+        {
+            User32.ShowWindow(hWnd, User32.SW_MINIMIZE);
         }
     }
 
