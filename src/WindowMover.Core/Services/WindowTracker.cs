@@ -16,15 +16,17 @@ public class WindowTracker : IDisposable
 {
     private const string PropName = "WindowMover_UID";
     private const string SnapshotFileName = "last-snapshot.json";
+    private const string ConfigFileName = "config.json";
     private const int MaxTitleHistory = 5;
 
     private readonly string _snapshotDir;
+    private readonly string _configDir;
     private readonly WindowManager _windowManager;
     private readonly MonitorIdentifier _monitorIdentifier;
     private readonly JsonSerializerOptions _jsonOptions;
 
-    private int _nextUid = 1;
-    private readonly Dictionary<int, List<string>> _titleHistory = new();
+    private long _nextUid;
+    private readonly Dictionary<long, List<string>> _titleHistory = new();
     private System.Threading.Timer? _snapshotTimer;
     private bool _disposed;
 
@@ -38,6 +40,9 @@ public class WindowTracker : IDisposable
         _windowManager = windowManager;
         _monitorIdentifier = monitorIdentifier;
         _snapshotDir = snapshotDir;
+        _configDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "WindowMover");
         _jsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -46,6 +51,8 @@ public class WindowTracker : IDisposable
             Converters = { new JsonStringEnumConverter() }
         };
         Directory.CreateDirectory(_snapshotDir);
+        Directory.CreateDirectory(_configDir);
+        _nextUid = LoadNextUid();
     }
 
     /// <summary>
@@ -288,10 +295,10 @@ public class WindowTracker : IDisposable
     /// <summary>
     /// Gets the UID for a window, or 0 if not tagged.
     /// </summary>
-    public static int GetUid(IntPtr hwnd)
+    public static long GetUid(IntPtr hwnd)
     {
         var prop = User32.GetProp(hwnd, PropName);
-        return prop == IntPtr.Zero ? 0 : prop.ToInt32();
+        return prop == IntPtr.Zero ? 0L : prop.ToInt64();
     }
 
     public void Dispose()
@@ -299,10 +306,11 @@ public class WindowTracker : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // Final snapshot before shutdown
+        // Final snapshot and config save before shutdown
         try
         {
             CaptureAndSaveSnapshot();
+            SaveNextUid();
         }
         catch { }
 
@@ -315,14 +323,15 @@ public class WindowTracker : IDisposable
     /// <summary>
     /// Ensures the window has a UID. Returns the existing or newly assigned UID.
     /// </summary>
-    private int EnsureUid(IntPtr hwnd)
+    private long EnsureUid(IntPtr hwnd)
     {
         var existing = User32.GetProp(hwnd, PropName);
         if (existing != IntPtr.Zero)
-            return existing.ToInt32();
+            return existing.ToInt64();
 
         var uid = _nextUid++;
         User32.SetProp(hwnd, PropName, (IntPtr)uid);
+        SaveNextUid();
         return uid;
     }
 
@@ -379,7 +388,7 @@ public class WindowTracker : IDisposable
             _ => WindowShowState.Normal
         };
 
-    private void UpdateTitleHistory(int uid, string title)
+    private void UpdateTitleHistory(long uid, string title)
     {
         if (string.IsNullOrWhiteSpace(title)) return;
 
@@ -400,7 +409,7 @@ public class WindowTracker : IDisposable
             history.RemoveAt(0);
     }
 
-    private List<string> GetTitleHistory(int uid)
+    private List<string> GetTitleHistory(long uid)
     {
         return _titleHistory.TryGetValue(uid, out var history)
             ? new List<string>(history)
@@ -498,10 +507,76 @@ public class WindowTracker : IDisposable
     private string GetSnapshotPath() =>
         Path.Combine(_snapshotDir, SnapshotFileName);
 
+    private string GetConfigPath() =>
+        Path.Combine(_configDir, ConfigFileName);
+
+    /// <summary>
+    /// Loads the next UID value from config.json, or starts at 1 if no config exists.
+    /// </summary>
+    private long LoadNextUid()
+    {
+        try
+        {
+            var path = GetConfigPath();
+            if (!File.Exists(path)) return 1;
+
+            var json = File.ReadAllText(path);
+            var config = JsonSerializer.Deserialize<AppConfig>(json, _jsonOptions);
+            return config?.NextWindowUid ?? 1;
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.Error("Failed to load config — starting UID from 1", ex);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// Persists the current next UID value to config.json.
+    /// </summary>
+    private void SaveNextUid()
+    {
+        try
+        {
+            var path = GetConfigPath();
+            AppConfig config;
+
+            // Preserve other config values if the file already exists
+            if (File.Exists(path))
+            {
+                var existing = File.ReadAllText(path);
+                config = JsonSerializer.Deserialize<AppConfig>(existing, _jsonOptions) ?? new AppConfig();
+            }
+            else
+            {
+                config = new AppConfig();
+            }
+
+            config.NextWindowUid = _nextUid;
+            var json = JsonSerializer.Serialize(config, _jsonOptions);
+            File.WriteAllText(path, json);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.Error("Failed to save config", ex);
+        }
+    }
+
     private static string GetDefaultSnapshotDir() =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "WindowMover", "snapshots");
 
     #endregion
+}
+
+/// <summary>
+/// Persistent application configuration stored in %APPDATA%\WindowMover\config.json.
+/// </summary>
+internal class AppConfig
+{
+    /// <summary>
+    /// The next window UID to assign. Monotonically increasing across app restarts.
+    /// </summary>
+    public long NextWindowUid { get; set; } = 1;
 }

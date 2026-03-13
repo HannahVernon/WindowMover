@@ -8,9 +8,9 @@ public class WindowSnapshot
 {
     /// <summary>
     /// Unique identifier assigned via SetProp during the current session.
-    /// Only meaningful within the session that created it; ignored after reboot.
+    /// Monotonically increasing Int64, persisted in config.json across app restarts.
     /// </summary>
-    public int Uid { get; set; }
+    public long Uid { get; set; }
 
     /// <summary>
     /// Process name (e.g., "firefox", "devenv").
