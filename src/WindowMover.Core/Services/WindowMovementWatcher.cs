@@ -139,12 +139,23 @@ public class WindowMovementWatcher : IDisposable
                 string? exePath = null;
                 try { exePath = process.MainModule?.FileName; } catch { }
 
+                // Capture the window title for per-window matching
+                int titleLength = User32.GetWindowTextLength(hwnd);
+                string windowTitle = string.Empty;
+                if (titleLength > 0)
+                {
+                    var buffer = new char[titleLength + 1];
+                    User32.GetWindowText(hwnd, buffer, buffer.Length);
+                    windowTitle = new string(buffer, 0, titleLength);
+                }
+
                 WindowMoved?.Invoke(this, new WindowMovedEventArgs(
                     hwnd,
                     process.ProcessName,
                     exePath,
                     targetMonitor,
-                    (uint)process.Id));
+                    (uint)process.Id,
+                    windowTitle));
             }
         }
         catch (ArgumentException)
@@ -189,14 +200,17 @@ public class WindowMovedEventArgs : EventArgs
     public string? ExecutablePath { get; }
     public MonitorInfo TargetMonitor { get; }
     public uint ProcessId { get; }
+    public string WindowTitle { get; }
 
     public WindowMovedEventArgs(IntPtr windowHandle, string processName,
-        string? executablePath, MonitorInfo targetMonitor, uint processId = 0)
+        string? executablePath, MonitorInfo targetMonitor, uint processId = 0,
+        string windowTitle = "")
     {
         WindowHandle = windowHandle;
         ProcessName = processName;
         ExecutablePath = executablePath;
         TargetMonitor = targetMonitor;
         ProcessId = processId;
+        WindowTitle = windowTitle;
     }
 }

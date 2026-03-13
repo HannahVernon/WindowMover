@@ -90,6 +90,10 @@
                                         <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                    FontSize="11" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding WindowTitle}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="11" TextWrapping="Wrap"
+                                                   Visibility="{Binding WindowTitle, Converter={StaticResource NonEmptyToVisibleConverter}}" />
                                     </StackPanel>
                                 </Border>
                             </DataTemplate>
@@ -191,6 +195,10 @@
                                                         <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
                                                                    Foreground="{StaticResource TextSecondaryBrush}"
                                                                    FontSize="11" TextWrapping="Wrap" />
+                                                        <TextBlock Text="{Binding WindowTitle}"
+                                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                                   FontSize="11" TextWrapping="Wrap"
+                                                                   Visibility="{Binding WindowTitle, Converter={StaticResource NonEmptyToVisibleConverter}}" />
                                                     </StackPanel>
                                                 </DockPanel>
                                             </Border>

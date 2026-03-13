@@ -33,5 +33,12 @@ public class WindowRule
     /// </summary>
     public uint ProcessId { get; set; }
 
+    /// <summary>
+    /// The window title for per-window rules. When set, this rule applies only to
+    /// the specific window with this title. When null/empty, the rule applies to
+    /// all windows of the process (backward-compatible behavior).
+    /// </summary>
+    public string? WindowTitle { get; set; }
+
     public override string ToString() => $"{DisplayName} → {TargetMonitorId}";
 }

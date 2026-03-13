@@ -15,6 +15,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly WindowManager _windowManager;
     private readonly ProfileManager _profileManager;
     private readonly WindowMovementWatcher _windowMovementWatcher;
+    private readonly WindowTracker _windowTracker;
 
     private string _currentSetupName = "Detecting...";
     private string _statusMessage = string.Empty;
@@ -31,6 +32,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _profileManager = new ProfileManager();
         _monitorWatcher = new MonitorWatcher(_monitorIdentifier);
         _windowMovementWatcher = new WindowMovementWatcher(_monitorIdentifier);
+        _windowTracker = new WindowTracker(_windowManager, _monitorIdentifier);
 
         Monitors = [];
         UnassignedApps = [];
@@ -97,10 +99,18 @@ public class MainViewModel : ViewModelBase, IDisposable
     public void Initialize()
     {
         AppLogger.Instance.Info("Initializing: detecting monitors and loading profile");
+
+        // Attempt to restore window positions from the last snapshot before anything else
+        TryRestoreFromSnapshot();
+
         DetectAndLoadSetup();
         _monitorWatcher.Start();
         _windowMovementWatcher.Start();
         SessionDetector.StartWatching();
+
+        // Start periodic desktop snapshots (every 30 seconds)
+        _windowTracker.StartPeriodicSnapshots(30);
+
         AppLogger.Instance.Info($"Initialized with setup: {CurrentSetupName}, {Monitors.Count} monitor(s)");
     }
 
@@ -243,19 +253,32 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     private void RefreshRunningApps()
     {
-        var runningApps = _windowManager.GetRunningApps();
-        var assignedProcesses = new HashSet<string>(
+        var visibleWindows = _windowManager.GetVisibleWindows();
+        var assignedHandles = new HashSet<IntPtr>(
             Monitors.SelectMany(m => m.AssignedApps)
                 .Concat(UnassignedApps)
-                .Select(a => a.ProcessName),
+                .Where(a => a.WindowHandle != IntPtr.Zero)
+                .Select(a => a.WindowHandle));
+
+        // Also track assigned by ProcessName+Title for profile-loaded rules (no handle)
+        var assignedKeys = new HashSet<string>(
+            Monitors.SelectMany(m => m.AssignedApps)
+                .Concat(UnassignedApps)
+                .Select(a => $"{a.ProcessName}|{a.WindowTitle}"),
             StringComparer.OrdinalIgnoreCase);
 
-        foreach (var app in runningApps)
+        foreach (var window in visibleWindows)
         {
-            if (!assignedProcesses.Contains(app.ProcessName))
-            {
-                UnassignedApps.Add(new AppRuleViewModel(app));
-            }
+            if (assignedHandles.Contains(window.Handle))
+                continue;
+
+            var key = $"{window.ProcessName}|{window.Title}";
+            if (assignedKeys.Contains(key))
+                continue;
+
+            UnassignedApps.Add(new AppRuleViewModel(window));
+            assignedHandles.Add(window.Handle);
+            assignedKeys.Add(key);
         }
     }
 
@@ -400,6 +423,56 @@ public class MainViewModel : ViewModelBase, IDisposable
         Application.Current.Dispatcher.Invoke(DetectAndLoadSetup);
     }
 
+    /// <summary>
+    /// On startup, attempts to restore window positions from the last periodic snapshot.
+    /// Only restores if the current monitor setup matches the snapshot's setup.
+    /// </summary>
+    private void TryRestoreFromSnapshot()
+    {
+        try
+        {
+            var snapshot = _windowTracker.LoadLastSnapshot();
+            if (snapshot == null)
+            {
+                AppLogger.Instance.Info("No previous snapshot found — skipping restore");
+                return;
+            }
+
+            // Check if the snapshot is too old (more than 24 hours)
+            if ((DateTime.UtcNow - snapshot.CapturedAt).TotalHours > 24)
+            {
+                AppLogger.Instance.Info($"Snapshot is too old ({snapshot.CapturedAt:g}) — skipping restore");
+                return;
+            }
+
+            // Check machine name matches
+            if (!snapshot.MachineName.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            {
+                AppLogger.Instance.Info("Snapshot is from a different machine — skipping restore");
+                return;
+            }
+
+            var monitors = _monitorIdentifier.GetConnectedMonitors();
+            var isRemote = SessionDetector.IsRemoteSession();
+            var currentFingerprint = MonitorSetup.ComputeFingerprint(monitors, isRemote);
+
+            if (!currentFingerprint.Equals(snapshot.SetupFingerprint, StringComparison.OrdinalIgnoreCase))
+            {
+                AppLogger.Instance.Info("Monitor setup changed since last snapshot — skipping restore");
+                return;
+            }
+
+            var restored = _windowTracker.RestoreFromSnapshot(snapshot, monitors);
+            StatusMessage = restored > 0
+                ? $"Restored {restored} window(s) from last session"
+                : "No windows matched for restoration";
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.Error("Failed to restore from snapshot", ex);
+        }
+    }
+
     private void OnWindowMoved(object? sender, WindowMovedEventArgs e)
     {
         Application.Current.Dispatcher.Invoke(() =>
@@ -410,14 +483,16 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (targetMonitorVm == null)
                 return;
 
-            // Find existing rule for this process in any monitor column or unassigned
+            // Find existing card for this specific window (by handle first, then process+title)
             AppRuleViewModel? existingApp = null;
             MonitorViewModel? sourceMonitor = null;
 
             foreach (var monitor in Monitors)
             {
-                existingApp = monitor.AssignedApps.FirstOrDefault(
-                    a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+                existingApp = monitor.AssignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                    ?? monitor.AssignedApps.FirstOrDefault(a =>
+                        a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                        a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
                 if (existingApp != null)
                 {
                     sourceMonitor = monitor;
@@ -425,26 +500,33 @@ public class MainViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            existingApp ??= UnassignedApps.FirstOrDefault(
-                a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+            existingApp ??= UnassignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                ?? UnassignedApps.FirstOrDefault(a =>
+                    a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                    a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
 
             if (existingApp != null)
             {
-                // Already on the correct monitor — nothing to do
                 if (sourceMonitor == targetMonitorVm)
                     return;
+
+                // Update handle and title in case they changed
+                existingApp.WindowHandle = e.WindowHandle;
+                existingApp.WindowTitle = e.WindowTitle;
 
                 MoveApp(existingApp, sourceMonitor, targetMonitorVm);
                 StatusMessage = $"{existingApp.DisplayName} moved to {targetMonitorVm.DisplayName}";
             }
             else
             {
-                // New app we haven't seen — add it directly to the target monitor
+                // New window we haven't seen — add it directly to the target monitor
                 var newApp = new AppRuleViewModel
                 {
                     ProcessName = e.ProcessName,
                     DisplayName = e.ProcessName,
-                    ExecutablePath = e.ExecutablePath
+                    WindowTitle = e.WindowTitle,
+                    ExecutablePath = e.ExecutablePath,
+                    WindowHandle = e.WindowHandle
                 };
                 targetMonitorVm.AssignedApps.Add(newApp);
                 HasUnsavedChanges = true;
@@ -461,6 +543,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _monitorWatcher.SetupChanged -= OnSetupChanged;
         _windowMovementWatcher.WindowMoved -= OnWindowMoved;
         SessionDetector.SessionChanged -= OnSessionChanged;
+        _windowTracker.Dispose();  // saves final snapshot
         _monitorWatcher.Dispose();
         _windowMovementWatcher.Dispose();
         SessionDetector.StopWatching();
