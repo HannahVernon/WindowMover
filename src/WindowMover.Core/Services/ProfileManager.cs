@@ -52,6 +52,28 @@ public class ProfileManager
     }
 
     /// <summary>
+    /// Finds the closest existing RDP profile when no exact match exists.
+    /// Prefers profiles with the most monitors in common with the current setup.
+    /// Returns null if no RDP profiles exist.
+    /// </summary>
+    public LayoutProfile? FindClosestRemoteProfile(MonitorSetup currentSetup)
+    {
+        if (!currentSetup.IsRemoteSession)
+            return null;
+
+        var currentDeviceIds = new HashSet<string>(
+            currentSetup.Monitors.Select(m => m.DeviceId),
+            StringComparer.OrdinalIgnoreCase);
+
+        return _profiles.Values
+            .Where(p => p.IsRemoteSession)
+            .OrderByDescending(p => p.Setup.Monitors
+                .Count(m => currentDeviceIds.Contains(m.DeviceId)))
+            .ThenByDescending(p => p.LastModified)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
     /// Creates or updates a profile for the given setup.
     /// </summary>
     public LayoutProfile SaveProfile(MonitorSetup setup, List<WindowRule> rules)
