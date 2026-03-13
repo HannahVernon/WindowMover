@@ -2,8 +2,12 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:WindowMover"
+             xmlns:converters="clr-namespace:WindowMover.Converters"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
+
+        <!-- Converters -->
+        <converters:NonEmptyToVisibleConverter x:Key="NonEmptyToVisibleConverter" />
 
         <!-- Color palette -->
         <Color x:Key="PrimaryColor">#0078D4</Color>

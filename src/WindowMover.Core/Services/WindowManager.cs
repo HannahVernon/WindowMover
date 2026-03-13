@@ -56,7 +56,14 @@ public class WindowManager
                     Title = title,
                     ProcessName = processName,
                     ProcessId = processId,
-                    ExecutablePath = exePath
+                    ExecutablePath = exePath,
+                    DisplayName = GetFriendlyAppName(new WindowInfo
+                    {
+                        Handle = hWnd,
+                        Title = title,
+                        ProcessName = processName,
+                        ExecutablePath = exePath
+                    })
                 });
             }
             catch (ArgumentException)
@@ -90,33 +97,32 @@ public class WindowManager
     }
 
     /// <summary>
-    /// Captures the current window layout — which app is on which monitor right now.
-    /// Returns a list of WindowRules reflecting the actual state of the desktop.
+    /// Captures the current window layout — which window is on which monitor right now.
+    /// Returns a per-window list of WindowRules reflecting the actual state of the desktop.
+    /// Each individual window gets its own rule, enabling per-window monitor assignments.
     /// </summary>
     public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
-        var rules = new Dictionary<string, WindowRule>(StringComparer.OrdinalIgnoreCase);
+        var rules = new List<WindowRule>();
 
         foreach (var window in windows)
         {
-            if (rules.ContainsKey(window.ProcessName))
-                continue;
-
             var hMonitor = User32.MonitorFromWindow(window.Handle, User32.MONITOR_DEFAULTTONEAREST);
             var monitor = MatchMonitorByHandle(hMonitor, monitors);
             if (monitor == null) continue;
 
-            rules[window.ProcessName] = new WindowRule
+            rules.Add(new WindowRule
             {
                 ProcessName = window.ProcessName,
-                DisplayName = GetFriendlyAppName(window),
+                DisplayName = window.DisplayName ?? GetFriendlyAppName(window),
                 ExecutablePath = window.ExecutablePath,
-                TargetMonitorId = monitor.DeviceId
-            };
+                TargetMonitorId = monitor.DeviceId,
+                WindowTitle = window.Title
+            });
         }
 
-        return rules.Values.ToList();
+        return rules;
     }
 
     /// <summary>
@@ -137,24 +143,53 @@ public class WindowManager
     }
 
     /// <summary>
-    /// Applies window rules: moves each matching app's windows to its target monitor.
-    /// Sets z-order based on rule list order: first rule per monitor = topmost window.
-    /// Windows without rules retain their original relative z-order.
+    /// Applies window rules: moves each matching window to its target monitor.
+    /// Per-window rules (WindowTitle set) are applied first; remaining windows
+    /// fall through to per-process rules (WindowTitle null/empty).
+    /// Z-order is set based on rule list order: first rule per monitor = topmost.
     /// </summary>
     public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
     {
         var windows = GetVisibleWindows();
-
-        // Track which handles are managed by rules (for z-order pass)
         var managedHandles = new HashSet<IntPtr>();
 
-        foreach (var rule in rules)
+        // Separate per-window and per-process rules
+        var perWindowRules = rules.Where(r => !string.IsNullOrEmpty(r.WindowTitle)).ToList();
+        var perProcessRules = rules.Where(r => string.IsNullOrEmpty(r.WindowTitle)).ToList();
+
+        // Phase 1: Apply per-window rules (match by ProcessName + WindowTitle)
+        foreach (var rule in perWindowRules)
+        {
+            var targetMonitor = monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (targetMonitor == null) continue;
+
+            var match = windows.FirstOrDefault(w =>
+                !managedHandles.Contains(w.Handle) &&
+                w.ProcessName.Equals(rule.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                w.Title.Equals(rule.WindowTitle, StringComparison.OrdinalIgnoreCase));
+
+            // Fuzzy fallback: match by title suffix (e.g., "— Mozilla Firefox")
+            match ??= windows.FirstOrDefault(w =>
+                !managedHandles.Contains(w.Handle) &&
+                w.ProcessName.Equals(rule.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                TitleSuffixMatch(w.Title, rule.WindowTitle!));
+
+            if (match != null)
+            {
+                MoveWindowToMonitor(match.Handle, targetMonitor);
+                managedHandles.Add(match.Handle);
+            }
+        }
+
+        // Phase 2: Apply per-process rules (legacy, no WindowTitle)
+        foreach (var rule in perProcessRules)
         {
             var targetMonitor = monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
             if (targetMonitor == null) continue;
 
             var matchingWindows = windows
-                .Where(w => w.ProcessName.Equals(rule.ProcessName, StringComparison.OrdinalIgnoreCase));
+                .Where(w => !managedHandles.Contains(w.Handle) &&
+                            w.ProcessName.Equals(rule.ProcessName, StringComparison.OrdinalIgnoreCase));
 
             foreach (var window in matchingWindows)
             {
@@ -165,16 +200,27 @@ public class WindowManager
 
         // Apply z-order from rule list order (first rule = topmost).
         // Iterate rules in reverse so the first rule's windows end up on top last.
-        // Use the TOPMOST/NOTOPMOST trick: SetWindowPos with HWND_TOP is unreliable
-        // for cross-process windows, but HWND_TOPMOST is always honored. We briefly
-        // set each window as topmost, then immediately remove the flag.
         var zOrderFlags = User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE;
         for (int i = rules.Count - 1; i >= 0; i--)
         {
-            var matchingWindows = windows
-                .Where(w => w.ProcessName.Equals(rules[i].ProcessName, StringComparison.OrdinalIgnoreCase));
+            IEnumerable<WindowInfo> ruleWindows;
+            if (!string.IsNullOrEmpty(rules[i].WindowTitle))
+            {
+                // Per-window rule: find specific window
+                var match = windows.FirstOrDefault(w =>
+                    w.ProcessName.Equals(rules[i].ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                    (w.Title.Equals(rules[i].WindowTitle, StringComparison.OrdinalIgnoreCase) ||
+                     TitleSuffixMatch(w.Title, rules[i].WindowTitle!)));
+                ruleWindows = match != null ? [match] : [];
+            }
+            else
+            {
+                // Per-process rule: all windows
+                ruleWindows = windows.Where(w =>
+                    w.ProcessName.Equals(rules[i].ProcessName, StringComparison.OrdinalIgnoreCase));
+            }
 
-            foreach (var window in matchingWindows)
+            foreach (var window in ruleWindows)
             {
                 User32.SetWindowPos(window.Handle, User32.HWND_TOPMOST,
                     0, 0, 0, 0, zOrderFlags);
@@ -182,6 +228,29 @@ public class WindowManager
                     0, 0, 0, 0, zOrderFlags);
             }
         }
+    }
+
+    /// <summary>
+    /// Checks if two window titles share the same suffix (app name portion).
+    /// E.g., "Reddit — Mozilla Firefox" and "YouTube — Mozilla Firefox" both
+    /// have suffix "Mozilla Firefox".
+    /// </summary>
+    private static bool TitleSuffixMatch(string title1, string title2)
+    {
+        var delimiters = new[] { " — ", " - ", " | " };
+        foreach (var delim in delimiters)
+        {
+            var idx1 = title1.LastIndexOf(delim, StringComparison.Ordinal);
+            var idx2 = title2.LastIndexOf(delim, StringComparison.Ordinal);
+            if (idx1 > 0 && idx2 > 0)
+            {
+                var suffix1 = title1[(idx1 + delim.Length)..];
+                var suffix2 = title2[(idx2 + delim.Length)..];
+                if (suffix1.Equals(suffix2, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -406,6 +475,7 @@ public class WindowInfo
     public string ProcessName { get; set; } = string.Empty;
     public uint ProcessId { get; set; }
     public string? ExecutablePath { get; set; }
+    public string? DisplayName { get; set; }
 }
 
 /// <summary>

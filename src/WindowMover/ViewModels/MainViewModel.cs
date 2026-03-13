@@ -253,19 +253,32 @@ public class MainViewModel : ViewModelBase, IDisposable
 
     private void RefreshRunningApps()
     {
-        var runningApps = _windowManager.GetRunningApps();
-        var assignedProcesses = new HashSet<string>(
+        var visibleWindows = _windowManager.GetVisibleWindows();
+        var assignedHandles = new HashSet<IntPtr>(
             Monitors.SelectMany(m => m.AssignedApps)
                 .Concat(UnassignedApps)
-                .Select(a => a.ProcessName),
+                .Where(a => a.WindowHandle != IntPtr.Zero)
+                .Select(a => a.WindowHandle));
+
+        // Also track assigned by ProcessName+Title for profile-loaded rules (no handle)
+        var assignedKeys = new HashSet<string>(
+            Monitors.SelectMany(m => m.AssignedApps)
+                .Concat(UnassignedApps)
+                .Select(a => $"{a.ProcessName}|{a.WindowTitle}"),
             StringComparer.OrdinalIgnoreCase);
 
-        foreach (var app in runningApps)
+        foreach (var window in visibleWindows)
         {
-            if (!assignedProcesses.Contains(app.ProcessName))
-            {
-                UnassignedApps.Add(new AppRuleViewModel(app));
-            }
+            if (assignedHandles.Contains(window.Handle))
+                continue;
+
+            var key = $"{window.ProcessName}|{window.Title}";
+            if (assignedKeys.Contains(key))
+                continue;
+
+            UnassignedApps.Add(new AppRuleViewModel(window));
+            assignedHandles.Add(window.Handle);
+            assignedKeys.Add(key);
         }
     }
 
@@ -470,14 +483,16 @@ public class MainViewModel : ViewModelBase, IDisposable
             if (targetMonitorVm == null)
                 return;
 
-            // Find existing rule for this process in any monitor column or unassigned
+            // Find existing card for this specific window (by handle first, then process+title)
             AppRuleViewModel? existingApp = null;
             MonitorViewModel? sourceMonitor = null;
 
             foreach (var monitor in Monitors)
             {
-                existingApp = monitor.AssignedApps.FirstOrDefault(
-                    a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+                existingApp = monitor.AssignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                    ?? monitor.AssignedApps.FirstOrDefault(a =>
+                        a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                        a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
                 if (existingApp != null)
                 {
                     sourceMonitor = monitor;
@@ -485,26 +500,33 @@ public class MainViewModel : ViewModelBase, IDisposable
                 }
             }
 
-            existingApp ??= UnassignedApps.FirstOrDefault(
-                a => a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase));
+            existingApp ??= UnassignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                ?? UnassignedApps.FirstOrDefault(a =>
+                    a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                    a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
 
             if (existingApp != null)
             {
-                // Already on the correct monitor — nothing to do
                 if (sourceMonitor == targetMonitorVm)
                     return;
+
+                // Update handle and title in case they changed
+                existingApp.WindowHandle = e.WindowHandle;
+                existingApp.WindowTitle = e.WindowTitle;
 
                 MoveApp(existingApp, sourceMonitor, targetMonitorVm);
                 StatusMessage = $"{existingApp.DisplayName} moved to {targetMonitorVm.DisplayName}";
             }
             else
             {
-                // New app we haven't seen — add it directly to the target monitor
+                // New window we haven't seen — add it directly to the target monitor
                 var newApp = new AppRuleViewModel
                 {
                     ProcessName = e.ProcessName,
                     DisplayName = e.ProcessName,
-                    ExecutablePath = e.ExecutablePath
+                    WindowTitle = e.WindowTitle,
+                    ExecutablePath = e.ExecutablePath,
+                    WindowHandle = e.WindowHandle
                 };
                 targetMonitorVm.AssignedApps.Add(newApp);
                 HasUnsavedChanges = true;
