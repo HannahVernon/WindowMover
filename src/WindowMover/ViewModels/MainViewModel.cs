@@ -217,6 +217,32 @@ public class MainViewModel : ViewModelBase, IDisposable
                 LoadProfileRules(profile);
                 StatusMessage = $"Loaded profile: {profile.Name}";
             }
+            else if (isRemote)
+            {
+                // For RDP sessions with no exact match, try to reuse the closest
+                // existing RDP profile rather than auto-creating a new one.
+                var closest = _profileManager.FindClosestRemoteProfile(_currentSetup);
+                if (closest != null)
+                {
+                    _activeFingerprint = closest.SetupFingerprint;
+                    CurrentSetupName = $"{closest.Name} (adapted)";
+                    LoadProfileRules(closest);
+                    // Move apps assigned to monitors that no longer exist to the first monitor
+                    ReassignOrphanedApps();
+                    AppLogger.Instance.Info($"Adapted RDP profile: {closest.Name} for current {monitors.Count}-monitor session");
+                    StatusMessage = $"Adapted profile: {closest.Name}";
+                }
+                else
+                {
+                    var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+                    var newProfile = _profileManager.SaveProfile(_currentSetup, capturedRules);
+                    _activeFingerprint = newProfile.SetupFingerprint;
+                    CurrentSetupName = newProfile.Name;
+                    LoadProfileRules(newProfile);
+                    AppLogger.Instance.Info($"Auto-created RDP profile: {newProfile.Name} with {capturedRules.Count} rule(s)");
+                    StatusMessage = $"New profile created: {newProfile.Name}";
+                }
+            }
             else
             {
                 // Auto-create a new profile from the current window layout
@@ -249,6 +275,27 @@ public class MainViewModel : ViewModelBase, IDisposable
                 UnassignedApps.Add(new AppRuleViewModel(rule));
             }
         }
+    }
+
+    /// <summary>
+    /// Moves any unassigned apps (from disconnected monitors) to the first available monitor.
+    /// Used when adapting an RDP profile to a session with fewer monitors.
+    /// </summary>
+    private void ReassignOrphanedApps()
+    {
+        if (Monitors.Count == 0 || UnassignedApps.Count == 0)
+            return;
+
+        var primaryMonitor = Monitors[0];
+        var orphans = UnassignedApps.ToList();
+        foreach (var app in orphans)
+        {
+            UnassignedApps.Remove(app);
+            primaryMonitor.AssignedApps.Add(app);
+        }
+
+        if (orphans.Count > 0)
+            AppLogger.Instance.Info($"Reassigned {orphans.Count} app(s) from disconnected monitors to {primaryMonitor.DisplayName}");
     }
 
     private void RefreshRunningApps()

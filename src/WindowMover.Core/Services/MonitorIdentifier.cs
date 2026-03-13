@@ -144,16 +144,25 @@ public class MonitorIdentifier
 
     private static MonitorInfo CreateFallbackMonitor(System.Windows.Forms.Screen screen)
     {
-        // For monitors without EDID data (e.g., RDP virtual displays)
+        // For monitors without EDID data (e.g., RDP virtual displays).
+        // Do NOT include resolution in the DeviceId — RDP window resizing changes
+        // resolution between sessions, which would create spurious new profiles.
+        var isRemote = SessionDetector.IsRemoteSession();
         var name = screen.Primary ? "Primary Display" : screen.DeviceName;
+        var displayName = screen.DeviceName.Replace(@"\\.\", "");
+
+        var deviceId = isRemote
+            ? $"RDP_{displayName}"
+            : $"FALLBACK_{displayName}_{screen.Bounds.Width}x{screen.Bounds.Height}";
+
         return new MonitorInfo
         {
-            DeviceId = $"FALLBACK_{screen.DeviceName.Replace(@"\\.\", "")}_{screen.Bounds.Width}x{screen.Bounds.Height}",
-            Manufacturer = "Unknown",
+            DeviceId = deviceId,
+            Manufacturer = isRemote ? "Remote Desktop" : "Unknown",
             Model = name,
-            FriendlyName = name,
+            FriendlyName = isRemote ? $"Remote {displayName}" : name,
             DevicePath = screen.DeviceName,
-            IsBuiltIn = screen.Primary && System.Windows.Forms.Screen.AllScreens.Length == 1,
+            IsBuiltIn = !isRemote && screen.Primary && System.Windows.Forms.Screen.AllScreens.Length == 1,
             CurrentWidth = screen.Bounds.Width,
             CurrentHeight = screen.Bounds.Height,
             WorkArea = screen.WorkingArea,
