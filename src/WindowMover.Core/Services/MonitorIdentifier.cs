@@ -106,7 +106,7 @@ public class MonitorIdentifier
                     Manufacturer = DecodeWmiArray(obj["ManufacturerName"]),
                     Model = DecodeWmiArray(obj["UserFriendlyName"]),
                     Serial = DecodeWmiArray(obj["SerialNumberID"]),
-                    ProductCode = obj["ProductCodeID"]?.ToString() ?? ""
+                    ProductCode = DecodeWmiArray(obj["ProductCodeID"])
                 };
 
                 monitors.Add(edid);
