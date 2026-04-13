@@ -185,4 +185,14 @@ internal static partial class User32
             }
         }
     }
+
+    // Window property storage (cross-process, per-HWND lifetime)
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool SetProp(IntPtr hWnd, string lpString, IntPtr hData);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr GetProp(IntPtr hWnd, string lpString);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern IntPtr RemoveProp(IntPtr hWnd, string lpString);
 }

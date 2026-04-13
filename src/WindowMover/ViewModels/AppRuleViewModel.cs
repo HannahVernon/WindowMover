@@ -10,6 +10,7 @@ public class AppRuleViewModel : ViewModelBase
 {
     private string _displayName = string.Empty;
     private string _processName = string.Empty;
+    private string _windowTitle = string.Empty;
     private string? _executablePath;
     private int _windowCount;
     private uint _processId;
@@ -30,8 +31,19 @@ public class AppRuleViewModel : ViewModelBase
     {
         DisplayName = rule.DisplayName;
         ProcessName = rule.ProcessName;
+        WindowTitle = rule.WindowTitle ?? string.Empty;
         ExecutablePath = rule.ExecutablePath;
         ProcessId = rule.ProcessId;
+    }
+
+    public AppRuleViewModel(WindowInfo window)
+    {
+        DisplayName = window.DisplayName ?? window.ProcessName;
+        ProcessName = window.ProcessName;
+        WindowTitle = window.Title;
+        ExecutablePath = window.ExecutablePath;
+        ProcessId = window.ProcessId;
+        WindowHandle = window.Handle;
     }
 
     public string DisplayName
@@ -45,6 +57,18 @@ public class AppRuleViewModel : ViewModelBase
         get => _processName;
         set => SetProperty(ref _processName, value);
     }
+
+    public string WindowTitle
+    {
+        get => _windowTitle;
+        set => SetProperty(ref _windowTitle, value);
+    }
+
+    /// <summary>
+    /// Runtime-only window handle for correlating this card with a live window.
+    /// Not serialized to profiles.
+    /// </summary>
+    public IntPtr WindowHandle { get; set; }
 
     public string? ExecutablePath
     {
@@ -79,6 +103,7 @@ public class AppRuleViewModel : ViewModelBase
         ExecutablePath = ExecutablePath,
         TargetMonitorId = targetMonitorId,
         DisplayName = DisplayName,
-        ProcessId = ProcessId
+        ProcessId = ProcessId,
+        WindowTitle = string.IsNullOrEmpty(WindowTitle) ? null : WindowTitle
     };
 }

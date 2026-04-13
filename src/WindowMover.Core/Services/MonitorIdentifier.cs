@@ -15,8 +15,57 @@ public class MonitorIdentifier
     /// </summary>
     public IReadOnlyList<MonitorInfo> GetConnectedMonitors()
     {
-        var edidMonitors = GetMonitorsFromWmi();
+        return GetConnectedMonitorsInternal(maxWmiRetries: 0);
+    }
+
+    /// <summary>
+    /// Retrieves monitors with WMI retry logic for post-hibernate/resume scenarios
+    /// where WMI may not be ready yet.
+    /// </summary>
+    public IReadOnlyList<MonitorInfo> GetConnectedMonitorsWithRetry(int maxRetries = 3, int retryDelayMs = 2000)
+    {
+        return GetConnectedMonitorsInternal(maxRetries, retryDelayMs);
+    }
+
+    /// <summary>
+    /// Returns true if all non-RDP monitors in the list are using fallback IDs
+    /// (meaning WMI/EDID data was unavailable).
+    /// </summary>
+    public static bool AllMonitorsAreFallback(IReadOnlyList<MonitorInfo> monitors)
+    {
+        var isRemote = SessionDetector.IsRemoteSession();
+        if (isRemote) return false;
+
+        return monitors.Count > 0 &&
+               monitors.All(m => m.DeviceId.StartsWith("FALLBACK_", StringComparison.Ordinal));
+    }
+
+    private IReadOnlyList<MonitorInfo> GetConnectedMonitorsInternal(int maxWmiRetries = 0, int retryDelayMs = 2000)
+    {
         var screens = System.Windows.Forms.Screen.AllScreens;
+        var isRemote = SessionDetector.IsRemoteSession();
+
+        // Retry WMI queries when EDID data is expected but unavailable (e.g., after hibernate resume)
+        List<EdidData> edidMonitors = [];
+        for (int attempt = 0; attempt <= maxWmiRetries; attempt++)
+        {
+            edidMonitors = GetMonitorsFromWmi();
+
+            if (edidMonitors.Count > 0 || isRemote)
+                break;
+
+            if (attempt < maxWmiRetries)
+            {
+                AppLogger.Instance.Info($"WMI returned no EDID data (attempt {attempt + 1}/{maxWmiRetries + 1}), retrying in {retryDelayMs}ms...");
+                Thread.Sleep(retryDelayMs);
+                retryDelayMs = Math.Min(retryDelayMs * 2, 10000);
+            }
+        }
+
+        if (edidMonitors.Count == 0 && !isRemote && screens.Length > 0)
+        {
+            AppLogger.Instance.Warn($"WMI returned no EDID data after all retries — {screens.Length} screen(s) will use fallback IDs");
+        }
 
         // Match WMI-reported monitors to Screen objects by instance name / device name
         var result = new List<MonitorInfo>();
@@ -144,16 +193,25 @@ public class MonitorIdentifier
 
     private static MonitorInfo CreateFallbackMonitor(System.Windows.Forms.Screen screen)
     {
-        // For monitors without EDID data (e.g., RDP virtual displays)
+        // For monitors without EDID data (e.g., RDP virtual displays).
+        // Do NOT include resolution in the DeviceId — RDP window resizing changes
+        // resolution between sessions, which would create spurious new profiles.
+        var isRemote = SessionDetector.IsRemoteSession();
         var name = screen.Primary ? "Primary Display" : screen.DeviceName;
+        var displayName = screen.DeviceName.Replace(@"\\.\", "");
+
+        var deviceId = isRemote
+            ? $"RDP_{displayName}"
+            : $"FALLBACK_{displayName}_{screen.Bounds.Width}x{screen.Bounds.Height}";
+
         return new MonitorInfo
         {
-            DeviceId = $"FALLBACK_{screen.DeviceName.Replace(@"\\.\", "")}_{screen.Bounds.Width}x{screen.Bounds.Height}",
-            Manufacturer = "Unknown",
+            DeviceId = deviceId,
+            Manufacturer = isRemote ? "Remote Desktop" : "Unknown",
             Model = name,
-            FriendlyName = name,
+            FriendlyName = isRemote ? $"Remote {displayName}" : name,
             DevicePath = screen.DeviceName,
-            IsBuiltIn = screen.Primary && System.Windows.Forms.Screen.AllScreens.Length == 1,
+            IsBuiltIn = !isRemote && screen.Primary && System.Windows.Forms.Screen.AllScreens.Length == 1,
             CurrentWidth = screen.Bounds.Width,
             CurrentHeight = screen.Bounds.Height,
             WorkArea = screen.WorkingArea,
