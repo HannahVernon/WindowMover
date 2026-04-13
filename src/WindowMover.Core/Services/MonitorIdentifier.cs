@@ -15,8 +15,57 @@ public class MonitorIdentifier
     /// </summary>
     public IReadOnlyList<MonitorInfo> GetConnectedMonitors()
     {
-        var edidMonitors = GetMonitorsFromWmi();
+        return GetConnectedMonitorsInternal(maxWmiRetries: 0);
+    }
+
+    /// <summary>
+    /// Retrieves monitors with WMI retry logic for post-hibernate/resume scenarios
+    /// where WMI may not be ready yet.
+    /// </summary>
+    public IReadOnlyList<MonitorInfo> GetConnectedMonitorsWithRetry(int maxRetries = 3, int retryDelayMs = 2000)
+    {
+        return GetConnectedMonitorsInternal(maxRetries, retryDelayMs);
+    }
+
+    /// <summary>
+    /// Returns true if all non-RDP monitors in the list are using fallback IDs
+    /// (meaning WMI/EDID data was unavailable).
+    /// </summary>
+    public static bool AllMonitorsAreFallback(IReadOnlyList<MonitorInfo> monitors)
+    {
+        var isRemote = SessionDetector.IsRemoteSession();
+        if (isRemote) return false;
+
+        return monitors.Count > 0 &&
+               monitors.All(m => m.DeviceId.StartsWith("FALLBACK_", StringComparison.Ordinal));
+    }
+
+    private IReadOnlyList<MonitorInfo> GetConnectedMonitorsInternal(int maxWmiRetries = 0, int retryDelayMs = 2000)
+    {
         var screens = System.Windows.Forms.Screen.AllScreens;
+        var isRemote = SessionDetector.IsRemoteSession();
+
+        // Retry WMI queries when EDID data is expected but unavailable (e.g., after hibernate resume)
+        List<EdidData> edidMonitors = [];
+        for (int attempt = 0; attempt <= maxWmiRetries; attempt++)
+        {
+            edidMonitors = GetMonitorsFromWmi();
+
+            if (edidMonitors.Count > 0 || isRemote)
+                break;
+
+            if (attempt < maxWmiRetries)
+            {
+                AppLogger.Instance.Info($"WMI returned no EDID data (attempt {attempt + 1}/{maxWmiRetries + 1}), retrying in {retryDelayMs}ms...");
+                Thread.Sleep(retryDelayMs);
+                retryDelayMs = Math.Min(retryDelayMs * 2, 10000);
+            }
+        }
+
+        if (edidMonitors.Count == 0 && !isRemote && screens.Length > 0)
+        {
+            AppLogger.Instance.Warn($"WMI returned no EDID data after all retries — {screens.Length} screen(s) will use fallback IDs");
+        }
 
         // Match WMI-reported monitors to Screen objects by instance name / device name
         var result = new List<MonitorInfo>();
