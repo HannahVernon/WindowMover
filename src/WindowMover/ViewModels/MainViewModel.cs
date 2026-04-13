@@ -197,6 +197,11 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         CurrentSetupName = _currentSetup.Name;
 
+        // Guard: if all monitors are using fallback IDs (no EDID), don't auto-create
+        // a new profile — it would overwrite the real one. The power resume retry
+        // handler in MonitorWatcher will re-evaluate once WMI is ready.
+        var allFallback = MonitorIdentifier.AllMonitorsAreFallback(monitors);
+
         // Rebuild monitor columns
         Application.Current.Dispatcher.Invoke(() =>
         {
@@ -216,6 +221,15 @@ public class MainViewModel : ViewModelBase, IDisposable
                 CurrentSetupName = profile.Name;
                 LoadProfileRules(profile);
                 StatusMessage = $"Loaded profile: {profile.Name}";
+            }
+            else if (allFallback)
+            {
+                // WMI/EDID data is unavailable — show current windows but don't save
+                // a profile with fallback IDs that would be wrong once EDID loads.
+                AppLogger.Instance.Warn("All monitors using fallback IDs — deferring profile creation until EDID data is available");
+                RefreshRunningApps();
+                StatusMessage = "Waiting for monitor identification...";
+                return;
             }
             else if (isRemote)
             {
