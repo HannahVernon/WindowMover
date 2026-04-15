@@ -461,6 +461,12 @@ public class WindowTracker : IDisposable
     {
         try
         {
+            if (!Win32WindowHelper.IsWindowResponsive(hwnd))
+            {
+                AppLogger.Instance.Warn($"Skipping restore for unresponsive window: {snap.ProcessName} — \"{snap.Title}\"");
+                return false;
+            }
+
             var placement = User32.WINDOWPLACEMENT.Default;
             User32.GetWindowPlacement(hwnd, ref placement);
 
@@ -470,30 +476,32 @@ public class WindowTracker : IDisposable
             // Restore to normal state first to allow repositioning
             if (wasMaximized || wasMinimized)
             {
-                User32.ShowWindow(hwnd, User32.SW_RESTORE);
+                if (!Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_RESTORE))
+                    return false;
             }
 
             // Move to saved position
-            User32.SetWindowPos(hwnd, IntPtr.Zero,
+            if (!Win32WindowHelper.SafeSetWindowPos(hwnd, IntPtr.Zero,
                 snap.Bounds.X, snap.Bounds.Y,
                 snap.Bounds.Width, snap.Bounds.Height,
-                User32.SWP_NOZORDER | User32.SWP_NOACTIVATE);
+                User32.SWP_NOZORDER | User32.SWP_NOACTIVATE))
+                return false;
 
             // Restore original show state
             switch (snap.ShowState)
             {
                 case WindowShowState.Maximized:
-                    User32.ShowWindow(hwnd, User32.SW_MAXIMIZE);
+                    Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_MAXIMIZE);
                     break;
                 case WindowShowState.Minimized:
-                    User32.ShowWindow(hwnd, User32.SW_MINIMIZE);
+                    Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_MINIMIZE);
                     break;
             }
 
             // Apply z-order using the TOPMOST/NOTOPMOST trick
             var zFlags = User32.SWP_NOMOVE | User32.SWP_NOSIZE | User32.SWP_NOACTIVATE;
-            User32.SetWindowPos(hwnd, User32.HWND_TOPMOST, 0, 0, 0, 0, zFlags);
-            User32.SetWindowPos(hwnd, User32.HWND_NOTOPMOST, 0, 0, 0, 0, zFlags);
+            Win32WindowHelper.SafeSetWindowPos(hwnd, User32.HWND_TOPMOST, 0, 0, 0, 0, zFlags);
+            Win32WindowHelper.SafeSetWindowPos(hwnd, User32.HWND_NOTOPMOST, 0, 0, 0, 0, zFlags);
 
             return true;
         }

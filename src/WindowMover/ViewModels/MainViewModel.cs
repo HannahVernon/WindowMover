@@ -46,6 +46,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
         SessionDetector.SessionChanged += OnSessionChanged;
+        Win32WindowHelper.HungWindowDetected += OnHungWindowDetected;
     }
 
     // Collections
@@ -484,6 +485,18 @@ public class MainViewModel : ViewModelBase, IDisposable
         Application.Current.Dispatcher.Invoke(DetectAndLoadSetup);
     }
 
+    private void OnHungWindowDetected(object? sender, HungWindowEventArgs e)
+    {
+        var displayName = !string.IsNullOrWhiteSpace(e.WindowTitle)
+            ? $"\"{e.WindowTitle}\" ({e.ProcessName})"
+            : e.ProcessName;
+
+        Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            StatusMessage = $"⚠ Skipped unresponsive window: {displayName}";
+        });
+    }
+
     /// <summary>
     /// On startup, attempts to restore window positions from the last periodic snapshot.
     /// Only restores if the current monitor setup matches the snapshot's setup.
@@ -604,6 +617,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         _monitorWatcher.SetupChanged -= OnSetupChanged;
         _windowMovementWatcher.WindowMoved -= OnWindowMoved;
         SessionDetector.SessionChanged -= OnSessionChanged;
+        Win32WindowHelper.HungWindowDetected -= OnHungWindowDetected;
         _windowTracker.Dispose();  // saves final snapshot
         _monitorWatcher.Dispose();
         _windowMovementWatcher.Dispose();
