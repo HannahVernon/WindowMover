@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what went wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behavior.
+      placeholder: |
+        1. Open the app
+        2. Connect/disconnect monitors
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log output
+      description: |
+        Paste relevant lines from the app log at `%APPDATA%\WindowMover\logs\`.
+        If the app crashed without a log entry, check the Windows Event Log (Application source).
+      render: text
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Windows 11 23H2, Windows 10 22H2"
+    validations:
+      required: true
+
+  - type: input
+    id: monitor-setup
+    attributes:
+      label: Monitor setup
+      description: How many monitors, docked/undocked, RDP, etc.
+      placeholder: "e.g. Laptop + 2 external via USB-C dock, or RDP single monitor"
+    validations:
+      required: true
+
+  - type: input
+    id: dotnet-version
+    attributes:
+      label: .NET version
+      description: Output of `dotnet --version`
+      placeholder: "e.g. 8.0.400"
+    validations:
+      required: true
