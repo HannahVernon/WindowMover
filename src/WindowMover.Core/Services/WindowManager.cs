@@ -222,9 +222,9 @@ public class WindowManager
 
             foreach (var window in ruleWindows)
             {
-                User32.SetWindowPos(window.Handle, User32.HWND_TOPMOST,
+                Win32WindowHelper.SafeSetWindowPos(window.Handle, User32.HWND_TOPMOST,
                     0, 0, 0, 0, zOrderFlags);
-                User32.SetWindowPos(window.Handle, User32.HWND_NOTOPMOST,
+                Win32WindowHelper.SafeSetWindowPos(window.Handle, User32.HWND_NOTOPMOST,
                     0, 0, 0, 0, zOrderFlags);
             }
         }
@@ -257,9 +257,13 @@ public class WindowManager
     /// Moves a window to the center of the specified monitor's work area.
     /// Handles maximized and minimized windows by restoring first, then moving,
     /// then re-applying the original state.
+    /// Skips windows that are hung or unresponsive to avoid blocking the UI thread.
     /// </summary>
     public static void MoveWindowToMonitor(IntPtr hWnd, MonitorInfo targetMonitor)
     {
+        if (!Win32WindowHelper.IsWindowResponsive(hWnd))
+            return;
+
         var placement = User32.WINDOWPLACEMENT.Default;
         User32.GetWindowPlacement(hWnd, ref placement);
 
@@ -268,7 +272,8 @@ public class WindowManager
 
         if (wasMaximized || wasMinimized)
         {
-            User32.ShowWindow(hWnd, User32.SW_RESTORE);
+            if (!Win32WindowHelper.SafeShowWindow(hWnd, User32.SW_RESTORE))
+                return;
         }
 
         // Get current window size
@@ -286,16 +291,17 @@ public class WindowManager
         int x = workArea.X + (workArea.Width - windowWidth) / 2;
         int y = workArea.Y + (workArea.Height - windowHeight) / 2;
 
-        User32.SetWindowPos(hWnd, IntPtr.Zero, x, y, windowWidth, windowHeight,
-            User32.SWP_NOZORDER | User32.SWP_NOACTIVATE);
+        if (!Win32WindowHelper.SafeSetWindowPos(hWnd, IntPtr.Zero, x, y, windowWidth, windowHeight,
+            User32.SWP_NOZORDER | User32.SWP_NOACTIVATE))
+            return;
 
         if (wasMaximized)
         {
-            User32.ShowWindow(hWnd, User32.SW_MAXIMIZE);
+            Win32WindowHelper.SafeShowWindow(hWnd, User32.SW_MAXIMIZE);
         }
         else if (wasMinimized)
         {
-            User32.ShowWindow(hWnd, User32.SW_MINIMIZE);
+            Win32WindowHelper.SafeShowWindow(hWnd, User32.SW_MINIMIZE);
         }
     }
 

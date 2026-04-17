@@ -55,6 +55,24 @@ internal static partial class User32
     public static partial bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsHungAppWindow(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindow(IntPtr hWnd);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageTimeoutW")]
+    public static partial nint SendMessageTimeout(
+        IntPtr hWnd,
+        uint Msg,
+        nint wParam,
+        nint lParam,
+        uint fuFlags,
+        uint uTimeout,
+        out nint lpdwResult);
+
+    [LibraryImport("user32.dll")]
     public static partial IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
     [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", StringMarshalling = StringMarshalling.Utf16)]
@@ -89,6 +107,13 @@ internal static partial class User32
     public const int SW_SHOWNORMAL = 1;
 
     public const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    // SendMessageTimeout flags
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+    public const uint SMTO_BLOCK = 0x0001;
+
+    // Window messages used with SendMessageTimeout
+    public const uint WM_NULL = 0x0000;
 
     public const int GWL_STYLE = -16;
     public const int GWL_EXSTYLE = -20;
@@ -184,6 +209,26 @@ internal static partial class User32
                 return mi;
             }
         }
+    }
+
+    // EnumDisplayDevices for monitor identification
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern bool EnumDisplayDevices(
+        string? lpDevice, uint iDevNum, ref DISPLAY_DEVICE lpDisplayDevice, uint dwFlags);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DISPLAY_DEVICE
+    {
+        public uint cb;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string DeviceName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceString;
+        public uint StateFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceID;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string DeviceKey;
     }
 
     // Window property storage (cross-process, per-HWND lifetime)
