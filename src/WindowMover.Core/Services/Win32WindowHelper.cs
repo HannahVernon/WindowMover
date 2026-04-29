@@ -12,8 +12,15 @@ public static class Win32WindowHelper
 {
     /// <summary>
     /// Timeout in milliseconds for SendMessageTimeout probes (3 seconds).
+    /// Used for destructive operations like SetWindowPos/ShowWindow.
     /// </summary>
     private const uint ProbeTimeoutMs = 3000;
+
+    /// <summary>
+    /// Shorter timeout for enumeration-only probes (500ms).
+    /// Keeps window enumeration fast when multiple windows are unresponsive.
+    /// </summary>
+    public const uint EnumerationTimeoutMs = 500;
 
     /// <summary>
     /// Raised when a hung or unresponsive window is detected.
@@ -27,7 +34,12 @@ public static class Win32WindowHelper
     /// or the window does not respond to a WM_NULL probe within the timeout.
     /// Logs details and raises <see cref="HungWindowDetected"/> on failure.
     /// </summary>
-    public static bool IsWindowResponsive(IntPtr hWnd)
+    /// <param name="hWnd">Window handle to check.</param>
+    /// <param name="timeoutMs">
+    /// Probe timeout in milliseconds. Defaults to <see cref="ProbeTimeoutMs"/> (3s).
+    /// Use <see cref="EnumerationTimeoutMs"/> (500ms) for non-destructive enumeration.
+    /// </param>
+    public static bool IsWindowResponsive(IntPtr hWnd, uint timeoutMs = ProbeTimeoutMs)
     {
         if (hWnd == IntPtr.Zero)
             return false;
@@ -50,7 +62,7 @@ public static class Win32WindowHelper
             0,
             0,
             User32.SMTO_ABORTIFHUNG | User32.SMTO_BLOCK,
-            ProbeTimeoutMs,
+            timeoutMs,
             out result);
 
         if (sent == 0)

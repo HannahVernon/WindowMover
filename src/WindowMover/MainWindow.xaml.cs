@@ -32,11 +32,11 @@ public partial class MainWindow : Window
         StateChanged += MainWindow_StateChanged;
     }
 
-    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         try
         {
-            ViewModel.Initialize();
+            await ViewModel.InitializeAsync();
         }
         catch (Exception ex)
         {
