@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using WindowMover.Core.Models;
@@ -11,8 +12,12 @@ namespace WindowMover.Core.Services;
 /// </summary>
 public class WindowManager
 {
+    private static readonly ConcurrentDictionary<string, string?> _fileDescriptionCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Gets all visible top-level application windows with their process info.
+    /// Skips unresponsive windows to avoid blocking the calling thread.
     /// </summary>
     public List<WindowInfo> GetVisibleWindows()
     {
@@ -21,6 +26,11 @@ public class WindowManager
         User32.EnumWindows((hWnd, _) =>
         {
             if (!IsAppWindow(hWnd))
+                return true;
+
+            // Skip hung/unresponsive windows — avoids blocking on GetWindowText,
+            // EnumChildWindows (UWP resolution), and process queries
+            if (!Win32WindowHelper.IsWindowResponsive(hWnd, Win32WindowHelper.EnumerationTimeoutMs))
                 return true;
 
             var title = GetWindowTitle(hWnd);
@@ -101,9 +111,9 @@ public class WindowManager
     /// Returns a per-window list of WindowRules reflecting the actual state of the desktop.
     /// Each individual window gets its own rule, enabling per-window monitor assignments.
     /// </summary>
-    public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors)
+    public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors, List<WindowInfo>? preEnumeratedWindows = null)
     {
-        var windows = GetVisibleWindows();
+        var windows = preEnumeratedWindows ?? GetVisibleWindows();
         var rules = new List<WindowRule>();
 
         foreach (var window in windows)
@@ -148,9 +158,9 @@ public class WindowManager
     /// fall through to per-process rules (WindowTitle null/empty).
     /// Z-order is set based on rule list order: first rule per monitor = topmost.
     /// </summary>
-    public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
+    public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors, List<WindowInfo>? preEnumeratedWindows = null)
     {
-        var windows = GetVisibleWindows();
+        var windows = preEnumeratedWindows ?? GetVisibleWindows();
         var managedHandles = new HashSet<IntPtr>();
 
         // Separate per-window and per-process rules
@@ -386,15 +396,26 @@ public class WindowManager
             }
         }
 
-        // Try to get the FileDescription from the process executable
+        // Try to get the FileDescription from the process executable (cached)
         try
         {
             if (window.ExecutablePath != null)
             {
-                var versionInfo = FileVersionInfo.GetVersionInfo(window.ExecutablePath);
-                if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription) &&
-                    !versionInfo.FileDescription.Contains("Application Frame Host", StringComparison.OrdinalIgnoreCase))
-                    return versionInfo.FileDescription;
+                var description = _fileDescriptionCache.GetOrAdd(window.ExecutablePath, static path =>
+                {
+                    try
+                    {
+                        var versionInfo = FileVersionInfo.GetVersionInfo(path);
+                        if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription) &&
+                            !versionInfo.FileDescription.Contains("Application Frame Host", StringComparison.OrdinalIgnoreCase))
+                            return versionInfo.FileDescription;
+                    }
+                    catch { }
+                    return null;
+                });
+
+                if (description != null)
+                    return description;
             }
         }
         catch { }
