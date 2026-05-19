@@ -29,6 +29,10 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="📷 Capture Layout" Command="{Binding CaptureLayoutCommand}"
+                            ToolTip="Update positions for open apps; preserve rules for closed apps"
+                            Style="{StaticResource ActionButton}" Margin="0,0,8,0" />
+                    <Button Content="🗑 Clear &amp; Capture" Command="{Binding ClearAndCaptureCommand}"
+                            ToolTip="Replace entire profile with only the currently open apps"
                             Style="{StaticResource ActionButton}" Margin="0,0,8,0" />
                     <Button Content="↻ Refresh Apps" Command="{Binding RefreshAppsCommand}"
                             Style="{StaticResource ActionButton}" Margin="0,0,8,0" />

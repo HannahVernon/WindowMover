@@ -44,6 +44,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         RefreshAppsCommand = new RelayCommand(RefreshApps);
         ResetCommand = new RelayCommand(Reset);
         CaptureLayoutCommand = new RelayCommand(CaptureCurrentLayout);
+        ClearAndCaptureCommand = new RelayCommand(ClearAndCapture);
 
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
@@ -95,6 +96,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     public RelayCommand RefreshAppsCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand CaptureLayoutCommand { get; }
+    public RelayCommand ClearAndCaptureCommand { get; }
 
     /// <summary>
     /// Initializes the ViewModel: detects monitors, loads profile, starts watching.
@@ -433,10 +435,60 @@ public class MainViewModel : ViewModelBase, IDisposable
         if (_currentSetup == null) return;
 
         var monitors = _currentSetup.Monitors;
-        var rules = await Task.Run(() => _windowManager.CaptureCurrentLayout(monitors));
-        AppLogger.Instance.Info($"Captured current layout: {rules.Count} app(s)");
+        var capturedRules = await Task.Run(() => _windowManager.CaptureCurrentLayout(monitors));
+        AppLogger.Instance.Info($"Captured current layout: {capturedRules.Count} app(s)");
 
-        // Clear existing assignments and repopulate from captured state
+        // Build a lookup of captured rules keyed by (ProcessName, WindowTitle) for upsert
+        var capturedLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in capturedRules)
+        {
+            var key = MakeRuleKey(rule.ProcessName, rule.WindowTitle);
+            capturedLookup.Add(key);
+        }
+
+        // Remove existing rules that match a captured rule (they will be replaced).
+        // Rules for apps that are NOT currently open are preserved.
+        foreach (var monitor in Monitors)
+        {
+            var toRemove = monitor.AssignedApps
+                .Where(a => capturedLookup.Contains(MakeRuleKey(a.ProcessName, a.WindowTitle)))
+                .ToList();
+            foreach (var app in toRemove)
+                monitor.AssignedApps.Remove(app);
+        }
+
+        var unassignedToRemove = UnassignedApps
+            .Where(a => capturedLookup.Contains(MakeRuleKey(a.ProcessName, a.WindowTitle)))
+            .ToList();
+        foreach (var app in unassignedToRemove)
+            UnassignedApps.Remove(app);
+
+        // Add the freshly captured rules
+        foreach (var rule in capturedRules)
+        {
+            var monitorVm = Monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (monitorVm != null)
+                monitorVm.AssignedApps.Add(new AppRuleViewModel(rule));
+            else
+                UnassignedApps.Add(new AppRuleViewModel(rule));
+        }
+
+        HasUnsavedChanges = true;
+
+        // Count total rules across all monitors + unassigned
+        var totalRules = Monitors.Sum(m => m.AssignedApps.Count) + UnassignedApps.Count;
+        StatusMessage = $"Captured {capturedRules.Count} app(s), {totalRules} total rules in profile";
+    }
+
+    private async void ClearAndCapture()
+    {
+        if (_currentSetup == null) return;
+
+        var monitors = _currentSetup.Monitors;
+        var rules = await Task.Run(() => _windowManager.CaptureCurrentLayout(monitors));
+        AppLogger.Instance.Info($"Clear & Capture: {rules.Count} app(s)");
+
+        // Replace: clear everything and repopulate from captured state only
         foreach (var monitor in Monitors)
             monitor.AssignedApps.Clear();
         UnassignedApps.Clear();
@@ -451,7 +503,14 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
 
         HasUnsavedChanges = true;
-        StatusMessage = $"Captured current layout — {rules.Count} app(s) mapped";
+        StatusMessage = $"Cleared profile and captured {rules.Count} app(s)";
+    }
+
+    private static string MakeRuleKey(string processName, string? windowTitle)
+    {
+        return string.IsNullOrEmpty(windowTitle)
+            ? processName
+            : $"{processName}\0{windowTitle}";
     }
 
     private async void OnSetupChanged(object? sender, SetupChangedEventArgs e)
