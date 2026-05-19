@@ -100,9 +100,17 @@ public class WindowTracker : IDisposable
         int zOrder = 0;
         foreach (var window in windows)
         {
+            var placement = GetWindowPlacement(window.Handle);
+            var bounds = GetNormalBounds(placement);
+
+            // Skip windows with zero or impossibly small dimensions.
+            // These are ghost windows (e.g., conhost IME helpers) or corrupted entries
+            // that would produce unusable snapshots.
+            if (bounds.Width < MinWindowDimension || bounds.Height < MinWindowDimension)
+                continue;
+
             var uid = EnsureUid(window.Handle);
             var monitorDeviceId = ResolveMonitorDeviceId(window.Handle, monitors);
-            var placement = GetWindowPlacement(window.Handle);
             var title = GetWindowTitle(window.Handle);
 
             // Track title history for this UID
@@ -115,7 +123,7 @@ public class WindowTracker : IDisposable
                 Title = title,
                 TitleHistory = GetTitleHistory(uid),
                 MonitorDeviceId = monitorDeviceId,
-                Bounds = GetNormalBounds(placement),
+                Bounds = bounds,
                 ZOrder = zOrder++,
                 ShowState = GetShowState(placement),
                 ExecutablePath = window.ExecutablePath
@@ -455,7 +463,18 @@ public class WindowTracker : IDisposable
     }
 
     /// <summary>
+    /// Minimum window dimension (width or height) to consider valid for capture/restore.
+    /// Windows smaller than this are likely invisible or corrupted.
+    /// </summary>
+    private const int MinWindowDimension = 50;
+
+    /// <summary>
     /// Restores a single window to its snapshot position and state.
+    /// Uses SetWindowPlacement (not SetWindowPos) so the coordinate space matches
+    /// GetWindowPlacement, which is critical for correct behavior under PerMonitorV2
+    /// DPI awareness.  SetWindowPos uses physical pixels while GetWindowPlacement
+    /// returns workspace-relative coordinates; mixing them causes windows to shrink
+    /// or grow when monitors have different scale factors.
     /// </summary>
     private static bool RestoreWindow(IntPtr hwnd, WindowSnapshot snap, MonitorInfo targetMonitor)
     {
@@ -463,39 +482,45 @@ public class WindowTracker : IDisposable
         {
             if (!Win32WindowHelper.IsWindowResponsive(hwnd))
             {
-                AppLogger.Instance.Warn($"Skipping restore for unresponsive window: {snap.ProcessName} — \"{snap.Title}\"");
+                AppLogger.Instance.Warn($"Skipping restore for unresponsive window: {snap.ProcessName} - \"{snap.Title}\"");
+                return false;
+            }
+
+            if (snap.Bounds.Width < MinWindowDimension || snap.Bounds.Height < MinWindowDimension)
+            {
+                AppLogger.Instance.Warn($"Skipping restore for window with invalid dimensions " +
+                    $"({snap.Bounds.Width}x{snap.Bounds.Height}): {snap.ProcessName} - \"{snap.Title}\"");
                 return false;
             }
 
             var placement = User32.WINDOWPLACEMENT.Default;
             User32.GetWindowPlacement(hwnd, ref placement);
 
-            bool wasMaximized = placement.showCmd == User32.SW_SHOWMAXIMIZED;
-            bool wasMinimized = placement.showCmd == User32.SW_SHOWMINIMIZED;
-
-            // Restore to normal state first to allow repositioning
-            if (wasMaximized || wasMinimized)
+            // Build the target placement from the snapshot.
+            // rcNormalPosition uses the same coordinate space as GetWindowPlacement,
+            // so no DPI conversion is needed.
+            placement.rcNormalPosition = new User32.RECT
             {
-                if (!Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_RESTORE))
-                    return false;
-            }
+                Left = snap.Bounds.X,
+                Top = snap.Bounds.Y,
+                Right = snap.Bounds.X + snap.Bounds.Width,
+                Bottom = snap.Bounds.Y + snap.Bounds.Height
+            };
 
-            // Move to saved position
-            if (!Win32WindowHelper.SafeSetWindowPos(hwnd, IntPtr.Zero,
-                snap.Bounds.X, snap.Bounds.Y,
-                snap.Bounds.Width, snap.Bounds.Height,
-                User32.SWP_NOZORDER | User32.SWP_NOACTIVATE))
+            placement.showCmd = snap.ShowState switch
+            {
+                WindowShowState.Maximized => User32.SW_SHOWMAXIMIZED,
+                WindowShowState.Minimized => User32.SW_SHOWMINIMIZED,
+                _ => User32.SW_SHOWNORMAL_UINT
+            };
+
+            // Clear flags so Windows does not override the position
+            placement.flags = 0;
+
+            if (!User32.SetWindowPlacement(hwnd, ref placement))
+            {
+                AppLogger.Instance.Warn($"SetWindowPlacement failed for {snap.ProcessName} - \"{snap.Title}\"");
                 return false;
-
-            // Restore original show state
-            switch (snap.ShowState)
-            {
-                case WindowShowState.Maximized:
-                    Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_MAXIMIZE);
-                    break;
-                case WindowShowState.Minimized:
-                    Win32WindowHelper.SafeShowWindow(hwnd, User32.SW_MINIMIZE);
-                    break;
             }
 
             // Apply z-order using the TOPMOST/NOTOPMOST trick
