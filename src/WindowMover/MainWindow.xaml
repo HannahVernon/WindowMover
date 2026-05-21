@@ -38,8 +38,11 @@
                             Style="{StaticResource ActionButton}" Margin="0,0,8,0"
                             ToolTip="Move all windows to their assigned monitor positions" />
                     <Button Content="💾 Save" Command="{Binding SaveCommand}"
-                            Style="{StaticResource ActionButton}"
+                            Style="{StaticResource ActionButton}" Margin="0,0,8,0"
                             ToolTip="Save the current layout to the profile" />
+                    <CheckBox Content="Auto-save" IsChecked="{Binding AutoSave}"
+                              VerticalAlignment="Center" Foreground="{StaticResource TextBrush}"
+                              ToolTip="Automatically save changes when windows are moved or the layout is captured" />
                 </StackPanel>
                 <StackPanel Orientation="Vertical">
                     <TextBlock Text="WindowMover" FontSize="18" FontWeight="SemiBold"

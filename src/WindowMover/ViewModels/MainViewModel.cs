@@ -26,6 +26,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
     private bool _isTopmost;
+    private bool _autoSave;
     private bool _disposed;
 
     public MainViewModel()
@@ -48,8 +49,12 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
+        _windowMovementWatcher.WindowActivated += OnWindowActivated;
         SessionDetector.SessionChanged += OnSessionChanged;
         Win32WindowHelper.HungWindowDetected += OnHungWindowDetected;
+
+        var settings = _profileManager.LoadSettings();
+        _autoSave = settings.AutoSave;
     }
 
     // Collections
@@ -80,6 +85,9 @@ public class MainViewModel : ViewModelBase, IDisposable
             SetProperty(ref _hasUnsavedChanges, value);
             OnPropertyChanged(nameof(UnsavedIndicator));
             CommandManager.InvalidateRequerySuggested();
+
+            if (value && _autoSave && !_windowMovementWatcher.Suppressed)
+                Save();
         }
     }
 
@@ -89,6 +97,21 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         get => _isTopmost;
         set => SetProperty(ref _isTopmost, value);
+    }
+
+    public bool AutoSave
+    {
+        get => _autoSave;
+        set
+        {
+            if (SetProperty(ref _autoSave, value))
+            {
+                _profileManager.SaveSettings(new AppSettings { AutoSave = value });
+
+                if (value && HasUnsavedChanges)
+                    Save();
+            }
+        }
     }
 
     // Commands
@@ -701,14 +724,22 @@ public class MainViewModel : ViewModelBase, IDisposable
 
             if (existingApp != null)
             {
-                if (sourceMonitor == targetMonitorVm)
-                    return;
-
                 // Update handle and title in case they changed
                 existingApp.WindowHandle = e.WindowHandle;
                 existingApp.WindowTitle = e.WindowTitle;
 
-                MoveApp(existingApp, sourceMonitor, targetMonitorVm);
+                // Capture current placement for this window
+                UpdateAppPlacement(existingApp, e.WindowHandle, e.TargetMonitor);
+
+                if (sourceMonitor == targetMonitorVm)
+                {
+                    // Same-monitor reposition: placement changed, mark dirty
+                    HasUnsavedChanges = true;
+                    return;
+                }
+
+                MoveApp(existingApp, sourceMonitor, targetMonitorVm, insertIndex: 0);
+
                 StatusMessage = $"{existingApp.DisplayName} moved to {targetMonitorVm.DisplayName}";
             }
             else
@@ -722,9 +753,56 @@ public class MainViewModel : ViewModelBase, IDisposable
                     ExecutablePath = e.ExecutablePath,
                     WindowHandle = e.WindowHandle
                 };
-                targetMonitorVm.AssignedApps.Add(newApp);
+                UpdateAppPlacement(newApp, e.WindowHandle, e.TargetMonitor);
+                // New window has focus; insert at top of z-order
+                targetMonitorVm.AssignedApps.Insert(0, newApp);
                 HasUnsavedChanges = true;
                 StatusMessage = $"{e.ProcessName} assigned to {targetMonitorVm.DisplayName}";
+            }
+        });
+    }
+
+    /// <summary>
+    /// Captures a window's current placement and updates the AppRuleViewModel
+    /// with proportional coordinates relative to the monitor's work area.
+    /// </summary>
+    private static void UpdateAppPlacement(AppRuleViewModel app, IntPtr hWnd, MonitorInfo monitor)
+    {
+        var rule = new WindowRule();
+        WindowManager.CaptureWindowPlacement(hWnd, monitor, rule);
+        app.RelativeX = rule.RelativeX;
+        app.RelativeY = rule.RelativeY;
+        app.RelativeWidth = rule.RelativeWidth;
+        app.RelativeHeight = rule.RelativeHeight;
+        app.ShowState = rule.ShowState;
+        app.CapturedWorkAreaWidth = rule.CapturedWorkAreaWidth;
+        app.CapturedWorkAreaHeight = rule.CapturedWorkAreaHeight;
+    }
+
+    private void OnWindowActivated(object? sender, WindowActivatedEventArgs e)
+    {
+        if (_windowMovementWatcher.Suppressed)
+            return;
+
+        Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            foreach (var monitor in Monitors)
+            {
+                var app = monitor.AssignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                    ?? monitor.AssignedApps.FirstOrDefault(a =>
+                        a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                        a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
+
+                if (app != null)
+                {
+                    int idx = monitor.AssignedApps.IndexOf(app);
+                    if (idx > 0)
+                    {
+                        monitor.AssignedApps.Move(idx, 0);
+                        HasUnsavedChanges = true;
+                    }
+                    return;
+                }
             }
         });
     }
@@ -736,6 +814,7 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         _monitorWatcher.SetupChanged -= OnSetupChanged;
         _windowMovementWatcher.WindowMoved -= OnWindowMoved;
+        _windowMovementWatcher.WindowActivated -= OnWindowActivated;
         SessionDetector.SessionChanged -= OnSessionChanged;
         Win32WindowHelper.HungWindowDetected -= OnHungWindowDetected;
         _windowTracker.Dispose();  // saves final snapshot

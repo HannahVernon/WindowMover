@@ -17,6 +17,7 @@ public class WindowMovementWatcher : IDisposable
     private readonly MonitorIdentifier _monitorIdentifier;
     private IntPtr _startHookHandle;
     private IntPtr _endHookHandle;
+    private IntPtr _foregroundHookHandle;
     private User32.WinEventDelegate? _hookDelegate;
     private bool _disposed;
 
@@ -33,6 +34,11 @@ public class WindowMovementWatcher : IDisposable
     /// Raised when the user finishes moving a window to a (possibly different) monitor.
     /// </summary>
     public event EventHandler<WindowMovedEventArgs>? WindowMoved;
+
+    /// <summary>
+    /// Raised when a window gains foreground focus (z-order changed).
+    /// </summary>
+    public event EventHandler<WindowActivatedEventArgs>? WindowActivated;
 
     public WindowMovementWatcher(MonitorIdentifier monitorIdentifier)
     {
@@ -58,7 +64,7 @@ public class WindowMovementWatcher : IDisposable
             IntPtr.Zero,
             _hookDelegate,
             0, 0,
-            User32.WINEVENT_OUTOFCONTEXT | User32.WINEVENT_SKIPOWNPROCESS);
+            User32.WINEVENT_OUTOFCONTEXT);
 
         _endHookHandle = User32.SetWinEventHook(
             User32.EVENT_SYSTEM_MOVESIZEEND,
@@ -66,7 +72,15 @@ public class WindowMovementWatcher : IDisposable
             IntPtr.Zero,
             _hookDelegate,
             0, 0,
-            User32.WINEVENT_OUTOFCONTEXT | User32.WINEVENT_SKIPOWNPROCESS);
+            User32.WINEVENT_OUTOFCONTEXT);
+
+        _foregroundHookHandle = User32.SetWinEventHook(
+            User32.EVENT_SYSTEM_FOREGROUND,
+            User32.EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero,
+            _hookDelegate,
+            0, 0,
+            User32.WINEVENT_OUTOFCONTEXT);
     }
 
     /// <summary>
@@ -83,6 +97,11 @@ public class WindowMovementWatcher : IDisposable
         {
             User32.UnhookWinEvent(_endHookHandle);
             _endHookHandle = IntPtr.Zero;
+        }
+        if (_foregroundHookHandle != IntPtr.Zero)
+        {
+            User32.UnhookWinEvent(_foregroundHookHandle);
+            _foregroundHookHandle = IntPtr.Zero;
         }
         _hookDelegate = null;
         _activeUserMoves.Clear();
@@ -117,6 +136,17 @@ public class WindowMovementWatcher : IDisposable
                 return;
 
             ProcessWindowMoveEnd(hwnd);
+        }
+
+        if (eventType == User32.EVENT_SYSTEM_FOREGROUND)
+        {
+            if (Suppressed)
+                return;
+
+            if (!User32.IsWindowVisible(hwnd))
+                return;
+
+            ProcessForegroundChange(hwnd);
         }
     }
 
@@ -184,6 +214,37 @@ public class WindowMovementWatcher : IDisposable
         return null;
     }
 
+    private void ProcessForegroundChange(IntPtr hwnd)
+    {
+        try
+        {
+            User32.GetWindowThreadProcessId(hwnd, out var processId);
+            var process = Process.GetProcessById((int)processId);
+
+            int titleLength = User32.GetWindowTextLength(hwnd);
+            string windowTitle = string.Empty;
+            if (titleLength > 0)
+            {
+                var buffer = new char[titleLength + 1];
+                User32.GetWindowText(hwnd, buffer, buffer.Length);
+                windowTitle = new string(buffer, 0, titleLength);
+            }
+
+            Debug.WriteLine($"Foreground: {process.ProcessName} / \"{windowTitle}\" (handle {hwnd})");
+
+            WindowActivated?.Invoke(this, new WindowActivatedEventArgs(
+                hwnd, process.ProcessName, windowTitle));
+        }
+        catch (ArgumentException)
+        {
+            // Process exited
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"WindowMovementWatcher foreground error: {ex.Message}");
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -211,6 +272,20 @@ public class WindowMovedEventArgs : EventArgs
         ExecutablePath = executablePath;
         TargetMonitor = targetMonitor;
         ProcessId = processId;
+        WindowTitle = windowTitle;
+    }
+}
+
+public class WindowActivatedEventArgs : EventArgs
+{
+    public IntPtr WindowHandle { get; }
+    public string ProcessName { get; }
+    public string WindowTitle { get; }
+
+    public WindowActivatedEventArgs(IntPtr windowHandle, string processName, string windowTitle)
+    {
+        WindowHandle = windowHandle;
+        ProcessName = processName;
         WindowTitle = windowTitle;
     }
 }

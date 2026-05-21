@@ -34,6 +34,13 @@ public class AppRuleViewModel : ViewModelBase
         WindowTitle = rule.WindowTitle ?? string.Empty;
         ExecutablePath = rule.ExecutablePath;
         ProcessId = rule.ProcessId;
+        RelativeX = rule.RelativeX;
+        RelativeY = rule.RelativeY;
+        RelativeWidth = rule.RelativeWidth;
+        RelativeHeight = rule.RelativeHeight;
+        ShowState = rule.ShowState;
+        CapturedWorkAreaWidth = rule.CapturedWorkAreaWidth;
+        CapturedWorkAreaHeight = rule.CapturedWorkAreaHeight;
     }
 
     public AppRuleViewModel(WindowInfo window)
@@ -94,6 +101,15 @@ public class AppRuleViewModel : ViewModelBase
         set => SetProperty(ref _isDragging, value);
     }
 
+    // Placement fields (persisted to profile via WindowRule)
+    public double? RelativeX { get; set; }
+    public double? RelativeY { get; set; }
+    public double? RelativeWidth { get; set; }
+    public double? RelativeHeight { get; set; }
+    public WindowShowState? ShowState { get; set; }
+    public int? CapturedWorkAreaWidth { get; set; }
+    public int? CapturedWorkAreaHeight { get; set; }
+
     /// <summary>
     /// Creates a WindowRule from this ViewModel for the given target monitor.
     /// </summary>
@@ -104,6 +120,13 @@ public class AppRuleViewModel : ViewModelBase
         TargetMonitorId = targetMonitorId,
         DisplayName = DisplayName,
         ProcessId = ProcessId,
-        WindowTitle = string.IsNullOrEmpty(WindowTitle) ? null : WindowTitle
+        WindowTitle = string.IsNullOrEmpty(WindowTitle) ? null : WindowTitle,
+        RelativeX = RelativeX,
+        RelativeY = RelativeY,
+        RelativeWidth = RelativeWidth,
+        RelativeHeight = RelativeHeight,
+        ShowState = ShowState,
+        CapturedWorkAreaWidth = CapturedWorkAreaWidth,
+        CapturedWorkAreaHeight = CapturedWorkAreaHeight
     };
 }

@@ -20,7 +20,8 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        Log.Info("WindowMover starting");
+        var version = typeof(App).Assembly.GetName().Version;
+        Log.Info($"WindowMover v{version} starting");
 
         // Global exception handling — log and show to user
         DispatcherUnhandledException += (_, args) =>
