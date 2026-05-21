@@ -9,7 +9,6 @@ Fixes #
 <!-- Describe how you verified the change works. Include OS, monitor setup, and any manual steps. -->
 
 - [ ] `dotnet build` — 0 errors, 0 warnings
-- [ ] `dotnet test` — all tests pass
 - [ ] Manually tested on Windows ___
 - [ ] Tested with ___ monitor(s) attached
 

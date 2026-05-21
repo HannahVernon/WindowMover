@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using WindowMover.Core.Models;
@@ -11,8 +12,12 @@ namespace WindowMover.Core.Services;
 /// </summary>
 public class WindowManager
 {
+    private static readonly ConcurrentDictionary<string, string?> _fileDescriptionCache =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Gets all visible top-level application windows with their process info.
+    /// Skips unresponsive windows to avoid blocking the calling thread.
     /// </summary>
     public List<WindowInfo> GetVisibleWindows()
     {
@@ -21,6 +26,11 @@ public class WindowManager
         User32.EnumWindows((hWnd, _) =>
         {
             if (!IsAppWindow(hWnd))
+                return true;
+
+            // Skip hung/unresponsive windows — avoids blocking on GetWindowText,
+            // EnumChildWindows (UWP resolution), and process queries
+            if (!Win32WindowHelper.IsWindowResponsive(hWnd, Win32WindowHelper.EnumerationTimeoutMs))
                 return true;
 
             var title = GetWindowTitle(hWnd);
@@ -101,9 +111,9 @@ public class WindowManager
     /// Returns a per-window list of WindowRules reflecting the actual state of the desktop.
     /// Each individual window gets its own rule, enabling per-window monitor assignments.
     /// </summary>
-    public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors)
+    public List<WindowRule> CaptureCurrentLayout(IReadOnlyList<MonitorInfo> monitors, List<WindowInfo>? preEnumeratedWindows = null)
     {
-        var windows = GetVisibleWindows();
+        var windows = preEnumeratedWindows ?? GetVisibleWindows();
         var rules = new List<WindowRule>();
 
         foreach (var window in windows)
@@ -112,17 +122,59 @@ public class WindowManager
             var monitor = MatchMonitorByHandle(hMonitor, monitors);
             if (monitor == null) continue;
 
-            rules.Add(new WindowRule
+            var rule = new WindowRule
             {
                 ProcessName = window.ProcessName,
                 DisplayName = window.DisplayName ?? GetFriendlyAppName(window),
                 ExecutablePath = window.ExecutablePath,
                 TargetMonitorId = monitor.DeviceId,
                 WindowTitle = window.Title
-            });
+            };
+
+            CaptureWindowPlacement(window.Handle, monitor, rule);
+            rules.Add(rule);
         }
 
         return rules;
+    }
+
+    /// <summary>
+    /// Captures a window's current placement as proportional coordinates relative
+    /// to the monitor's work area.  Uses GetWindowPlacement (workspace-relative coords)
+    /// for consistency with PerMonitorV2 DPI awareness.
+    /// </summary>
+    public static void CaptureWindowPlacement(IntPtr hWnd, MonitorInfo monitor, WindowRule rule)
+    {
+        var placement = User32.WINDOWPLACEMENT.Default;
+        if (!User32.GetWindowPlacement(hWnd, ref placement))
+            return;
+
+        var workArea = monitor.WorkArea;
+        if (workArea.Width <= 0 || workArea.Height <= 0)
+            return;
+
+        // Use rcNormalPosition (the restored/normal bounds, even if the window is maximized)
+        var bounds = placement.rcNormalPosition;
+        int w = bounds.Right - bounds.Left;
+        int h = bounds.Bottom - bounds.Top;
+
+        // Skip ghost windows
+        if (w < 50 || h < 50)
+            return;
+
+        rule.RelativeX = (double)(bounds.Left - workArea.X) / workArea.Width;
+        rule.RelativeY = (double)(bounds.Top - workArea.Y) / workArea.Height;
+        rule.RelativeWidth = (double)w / workArea.Width;
+        rule.RelativeHeight = (double)h / workArea.Height;
+        rule.CapturedWorkAreaWidth = workArea.Width;
+        rule.CapturedWorkAreaHeight = workArea.Height;
+
+        rule.ShowState = placement.showCmd switch
+        {
+            User32.SW_SHOWMAXIMIZED => WindowShowState.Maximized,
+            User32.SW_SHOWMINIMIZED => WindowShowState.Minimized,
+            _ => WindowShowState.Normal
+        };
     }
 
     /// <summary>
@@ -148,9 +200,9 @@ public class WindowManager
     /// fall through to per-process rules (WindowTitle null/empty).
     /// Z-order is set based on rule list order: first rule per monitor = topmost.
     /// </summary>
-    public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors)
+    public void ApplyRules(IReadOnlyList<WindowRule> rules, IReadOnlyList<MonitorInfo> monitors, List<WindowInfo>? preEnumeratedWindows = null)
     {
-        var windows = GetVisibleWindows();
+        var windows = preEnumeratedWindows ?? GetVisibleWindows();
         var managedHandles = new HashSet<IntPtr>();
 
         // Separate per-window and per-process rules
@@ -176,7 +228,7 @@ public class WindowManager
 
             if (match != null)
             {
-                MoveWindowToMonitor(match.Handle, targetMonitor);
+                MoveWindowToMonitor(match.Handle, targetMonitor, rule);
                 managedHandles.Add(match.Handle);
             }
         }
@@ -193,7 +245,7 @@ public class WindowManager
 
             foreach (var window in matchingWindows)
             {
-                MoveWindowToMonitor(window.Handle, targetMonitor);
+                MoveWindowToMonitor(window.Handle, targetMonitor, rule);
                 managedHandles.Add(window.Handle);
             }
         }
@@ -254,21 +306,62 @@ public class WindowManager
     }
 
     /// <summary>
-    /// Moves a window to the center of the specified monitor's work area.
-    /// Handles maximized and minimized windows by restoring first, then moving,
-    /// then re-applying the original state.
+    /// Moves a window to the specified monitor, restoring its saved position if available.
+    /// When a rule with proportional coordinates is provided, the window is placed at the
+    /// saved position (scaled to the current work area).  Otherwise, the window is centered.
+    /// Uses SetWindowPlacement for position restoration (workspace-relative coordinates,
+    /// safe under PerMonitorV2 DPI awareness).
     /// Skips windows that are hung or unresponsive to avoid blocking the UI thread.
     /// </summary>
-    public static void MoveWindowToMonitor(IntPtr hWnd, MonitorInfo targetMonitor)
+    public static void MoveWindowToMonitor(IntPtr hWnd, MonitorInfo targetMonitor, WindowRule? rule = null)
     {
         if (!Win32WindowHelper.IsWindowResponsive(hWnd))
             return;
 
-        var placement = User32.WINDOWPLACEMENT.Default;
-        User32.GetWindowPlacement(hWnd, ref placement);
+        var workArea = targetMonitor.WorkArea;
 
-        bool wasMaximized = placement.showCmd == User32.SW_SHOWMAXIMIZED;
-        bool wasMinimized = placement.showCmd == User32.SW_SHOWMINIMIZED;
+        // If the rule has saved proportional coordinates, restore to that position
+        if (rule?.RelativeX != null && rule.RelativeY != null &&
+            rule.RelativeWidth != null && rule.RelativeHeight != null)
+        {
+            int w = Math.Max(50, (int)(rule.RelativeWidth.Value * workArea.Width));
+            int h = Math.Max(50, (int)(rule.RelativeHeight.Value * workArea.Height));
+            int x = workArea.X + (int)(rule.RelativeX.Value * workArea.Width);
+            int y = workArea.Y + (int)(rule.RelativeY.Value * workArea.Height);
+
+            // Clamp so the window stays within the work area
+            x = Math.Max(workArea.X, Math.Min(x, workArea.X + workArea.Width - w));
+            y = Math.Max(workArea.Y, Math.Min(y, workArea.Y + workArea.Height - h));
+
+            var placement = User32.WINDOWPLACEMENT.Default;
+            User32.GetWindowPlacement(hWnd, ref placement);
+
+            placement.rcNormalPosition = new User32.RECT
+            {
+                Left = x,
+                Top = y,
+                Right = x + w,
+                Bottom = y + h
+            };
+
+            placement.showCmd = rule.ShowState switch
+            {
+                WindowShowState.Maximized => User32.SW_SHOWMAXIMIZED,
+                WindowShowState.Minimized => User32.SW_SHOWMINIMIZED,
+                _ => User32.SW_SHOWNORMAL_UINT
+            };
+
+            placement.flags = 0;
+            User32.SetWindowPlacement(hWnd, ref placement);
+            return;
+        }
+
+        // Fallback: center the window on the target monitor (legacy rules without position)
+        var currentPlacement = User32.WINDOWPLACEMENT.Default;
+        User32.GetWindowPlacement(hWnd, ref currentPlacement);
+
+        bool wasMaximized = currentPlacement.showCmd == User32.SW_SHOWMAXIMIZED;
+        bool wasMinimized = currentPlacement.showCmd == User32.SW_SHOWMINIMIZED;
 
         if (wasMaximized || wasMinimized)
         {
@@ -276,38 +369,31 @@ public class WindowManager
                 return;
         }
 
-        // Get current window size
         User32.GetWindowRect(hWnd, out var currentRect);
-        int windowWidth = currentRect.Width;
-        int windowHeight = currentRect.Height;
+        int windowWidth = Math.Min(currentRect.Width, workArea.Width);
+        int windowHeight = Math.Min(currentRect.Height, workArea.Height);
 
-        var workArea = targetMonitor.WorkArea;
+        int cx = workArea.X + (workArea.Width - windowWidth) / 2;
+        int cy = workArea.Y + (workArea.Height - windowHeight) / 2;
 
-        // Clamp window size to target work area
-        windowWidth = Math.Min(windowWidth, workArea.Width);
-        windowHeight = Math.Min(windowHeight, workArea.Height);
-
-        // Center the window in the target monitor's work area
-        int x = workArea.X + (workArea.Width - windowWidth) / 2;
-        int y = workArea.Y + (workArea.Height - windowHeight) / 2;
-
-        if (!Win32WindowHelper.SafeSetWindowPos(hWnd, IntPtr.Zero, x, y, windowWidth, windowHeight,
+        if (!Win32WindowHelper.SafeSetWindowPos(hWnd, IntPtr.Zero, cx, cy, windowWidth, windowHeight,
             User32.SWP_NOZORDER | User32.SWP_NOACTIVATE))
             return;
 
         if (wasMaximized)
-        {
             Win32WindowHelper.SafeShowWindow(hWnd, User32.SW_MAXIMIZE);
-        }
         else if (wasMinimized)
-        {
             Win32WindowHelper.SafeShowWindow(hWnd, User32.SW_MINIMIZE);
-        }
     }
 
     private static bool IsAppWindow(IntPtr hWnd)
     {
         if (!User32.IsWindowVisible(hWnd))
+            return false;
+
+        // Skip cloaked windows (UWP apps like Settings that are suspended but
+        // still report WS_VISIBLE; DWM hides them via the DWMWA_CLOAKED attribute)
+        if (Dwmapi.IsWindowCloaked(hWnd))
             return false;
 
         // Must have no owner (top-level)
@@ -386,15 +472,26 @@ public class WindowManager
             }
         }
 
-        // Try to get the FileDescription from the process executable
+        // Try to get the FileDescription from the process executable (cached)
         try
         {
             if (window.ExecutablePath != null)
             {
-                var versionInfo = FileVersionInfo.GetVersionInfo(window.ExecutablePath);
-                if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription) &&
-                    !versionInfo.FileDescription.Contains("Application Frame Host", StringComparison.OrdinalIgnoreCase))
-                    return versionInfo.FileDescription;
+                var description = _fileDescriptionCache.GetOrAdd(window.ExecutablePath, static path =>
+                {
+                    try
+                    {
+                        var versionInfo = FileVersionInfo.GetVersionInfo(path);
+                        if (!string.IsNullOrWhiteSpace(versionInfo.FileDescription) &&
+                            !versionInfo.FileDescription.Contains("Application Frame Host", StringComparison.OrdinalIgnoreCase))
+                            return versionInfo.FileDescription;
+                    }
+                    catch { }
+                    return null;
+                });
+
+                if (description != null)
+                    return description;
             }
         }
         catch { }

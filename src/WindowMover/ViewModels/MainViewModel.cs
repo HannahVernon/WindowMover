@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Input;
 using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
@@ -16,6 +17,8 @@ public class MainViewModel : ViewModelBase, IDisposable
     private readonly ProfileManager _profileManager;
     private readonly WindowMovementWatcher _windowMovementWatcher;
     private readonly WindowTracker _windowTracker;
+    private readonly SemaphoreSlim _setupChangeLock = new(1, 1);
+    private int _setupChangeGeneration;
 
     private string _currentSetupName = "Detecting...";
     private string _statusMessage = string.Empty;
@@ -23,6 +26,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     private string? _activeFingerprint;
     private bool _hasUnsavedChanges;
     private bool _isTopmost;
+    private bool _autoSave;
     private bool _disposed;
 
     public MainViewModel()
@@ -39,14 +43,18 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         SaveCommand = new RelayCommand(Save, () => HasUnsavedChanges);
         ApplyNowCommand = new RelayCommand(ApplyNow);
-        RefreshAppsCommand = new RelayCommand(RefreshApps);
         ResetCommand = new RelayCommand(Reset);
         CaptureLayoutCommand = new RelayCommand(CaptureCurrentLayout);
+        ClearAndCaptureCommand = new RelayCommand(ClearAndCapture);
 
         _monitorWatcher.SetupChanged += OnSetupChanged;
         _windowMovementWatcher.WindowMoved += OnWindowMoved;
+        _windowMovementWatcher.WindowActivated += OnWindowActivated;
         SessionDetector.SessionChanged += OnSessionChanged;
         Win32WindowHelper.HungWindowDetected += OnHungWindowDetected;
+
+        var settings = _profileManager.LoadSettings();
+        _autoSave = settings.AutoSave;
     }
 
     // Collections
@@ -76,6 +84,10 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             SetProperty(ref _hasUnsavedChanges, value);
             OnPropertyChanged(nameof(UnsavedIndicator));
+            CommandManager.InvalidateRequerySuggested();
+
+            if (value && _autoSave && !_windowMovementWatcher.Suppressed)
+                Save();
         }
     }
 
@@ -87,24 +99,40 @@ public class MainViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _isTopmost, value);
     }
 
+    public bool AutoSave
+    {
+        get => _autoSave;
+        set
+        {
+            if (SetProperty(ref _autoSave, value))
+            {
+                _profileManager.SaveSettings(new AppSettings { AutoSave = value });
+
+                if (value && HasUnsavedChanges)
+                    Save();
+            }
+        }
+    }
+
     // Commands
     public RelayCommand SaveCommand { get; }
     public RelayCommand ApplyNowCommand { get; }
-    public RelayCommand RefreshAppsCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand CaptureLayoutCommand { get; }
+    public RelayCommand ClearAndCaptureCommand { get; }
 
     /// <summary>
     /// Initializes the ViewModel: detects monitors, loads profile, starts watching.
+    /// Heavy work (WMI, window enumeration) runs on a background thread to keep the UI responsive.
     /// </summary>
-    public void Initialize()
+    public async Task InitializeAsync()
     {
         AppLogger.Instance.Info("Initializing: detecting monitors and loading profile");
 
         // Attempt to restore window positions from the last snapshot before anything else
-        TryRestoreFromSnapshot();
+        await Task.Run(TryRestoreFromSnapshot);
 
-        DetectAndLoadSetup();
+        await Task.Run(DetectAndLoadSetup);
         _monitorWatcher.Start();
         _windowMovementWatcher.Start();
         SessionDetector.StartWatching();
@@ -118,7 +146,7 @@ public class MainViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Activates a specific profile by fingerprint: loads its rules into the UI and applies them.
     /// </summary>
-    public void ActivateProfile(string fingerprint)
+    public async void ActivateProfile(string fingerprint)
     {
         var profile = _profileManager.GetProfile(fingerprint);
         if (profile == null) return;
@@ -132,15 +160,17 @@ public class MainViewModel : ViewModelBase, IDisposable
         UnassignedApps.Clear();
 
         LoadProfileRules(profile);
-        RefreshRunningApps();
+        var windows = await Task.Run(() => _windowManager.GetVisibleWindows());
+        RefreshRunningApps(windows);
 
-        // Apply window positions
+        // Apply window positions on background thread
         if (_currentSetup != null)
         {
+            var setup = _currentSetup;
             _windowMovementWatcher.Suppressed = true;
             try
             {
-                _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+                await Task.Run(() => _windowManager.ApplyRules(profile.Rules, setup.Monitors, windows));
             }
             finally
             {
@@ -190,22 +220,39 @@ public class MainViewModel : ViewModelBase, IDisposable
         HasUnsavedChanges = true;
     }
 
+    /// <summary>
+    /// Permanently removes an app rule from the profile (monitor-assigned).
+    /// </summary>
+    public void DeleteApp(AppRuleViewModel app, MonitorViewModel sourceMonitor)
+    {
+        sourceMonitor.AssignedApps.Remove(app);
+        HasUnsavedChanges = true;
+    }
+
+    /// <summary>
+    /// Permanently removes an app rule from the unassigned pool.
+    /// </summary>
+    public void DeleteUnassignedApp(AppRuleViewModel app)
+    {
+        UnassignedApps.Remove(app);
+        HasUnsavedChanges = true;
+    }
+
     private void DetectAndLoadSetup()
     {
+        // Phase 1: Heavy work (WMI, window enumeration) — safe to call from any thread
         var monitors = _monitorIdentifier.GetConnectedMonitors();
         var isRemote = SessionDetector.IsRemoteSession();
         _currentSetup = MonitorSetup.FromMonitors(monitors, isRemote);
-
-        CurrentSetupName = _currentSetup.Name;
-
-        // Guard: if all monitors are using fallback IDs (no EDID), don't auto-create
-        // a new profile — it would overwrite the real one. The power resume retry
-        // handler in MonitorWatcher will re-evaluate once WMI is ready.
         var allFallback = MonitorIdentifier.AllMonitorsAreFallback(monitors);
 
-        // Rebuild monitor columns
+        // Pre-enumerate windows off the UI thread so the dispatcher block stays fast
+        var visibleWindows = _windowManager.GetVisibleWindows();
+
+        // Phase 2: UI updates — must run on UI thread for ObservableCollection mutations
         Application.Current.Dispatcher.Invoke(() =>
         {
+            CurrentSetupName = _currentSetup.Name;
             Monitors.Clear();
             UnassignedApps.Clear();
 
@@ -228,7 +275,7 @@ public class MainViewModel : ViewModelBase, IDisposable
                 // WMI/EDID data is unavailable — show current windows but don't save
                 // a profile with fallback IDs that would be wrong once EDID loads.
                 AppLogger.Instance.Warn("All monitors using fallback IDs — deferring profile creation until EDID data is available");
-                RefreshRunningApps();
+                RefreshRunningApps(visibleWindows);
                 StatusMessage = "Waiting for monitor identification...";
                 return;
             }
@@ -249,7 +296,7 @@ public class MainViewModel : ViewModelBase, IDisposable
                 }
                 else
                 {
-                    var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+                    var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors, visibleWindows);
                     var newProfile = _profileManager.SaveProfile(_currentSetup, capturedRules);
                     _activeFingerprint = newProfile.SetupFingerprint;
                     CurrentSetupName = newProfile.Name;
@@ -261,7 +308,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             else
             {
                 // Auto-create a new profile from the current window layout
-                var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
+                var capturedRules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors, visibleWindows);
                 var newProfile = _profileManager.SaveProfile(_currentSetup, capturedRules);
                 _activeFingerprint = newProfile.SetupFingerprint;
                 CurrentSetupName = newProfile.Name;
@@ -271,7 +318,7 @@ public class MainViewModel : ViewModelBase, IDisposable
             }
 
             // Add running apps that aren't in any rule
-            RefreshRunningApps();
+            RefreshRunningApps(visibleWindows);
         });
     }
 
@@ -313,9 +360,9 @@ public class MainViewModel : ViewModelBase, IDisposable
             AppLogger.Instance.Info($"Reassigned {orphans.Count} app(s) from disconnected monitors to {primaryMonitor.DisplayName}");
     }
 
-    private void RefreshRunningApps()
+    private void RefreshRunningApps(List<WindowInfo>? preEnumeratedWindows = null)
     {
-        var visibleWindows = _windowManager.GetVisibleWindows();
+        var visibleWindows = preEnumeratedWindows ?? _windowManager.GetVisibleWindows();
         var assignedHandles = new HashSet<IntPtr>(
             Monitors.SelectMany(m => m.AssignedApps)
                 .Concat(UnassignedApps)
@@ -370,7 +417,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void ApplyNow()
+    private async void ApplyNow()
     {
         if (_currentSetup == null) return;
 
@@ -388,9 +435,10 @@ public class MainViewModel : ViewModelBase, IDisposable
                 ? _profileManager.GetProfile(_activeFingerprint)
                 : _profileManager.GetProfile(_currentSetup);
 
+            var setup = _currentSetup;
             if (profile != null)
             {
-                _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
+                await Task.Run(() => _windowManager.ApplyRules(profile.Rules, setup.Monitors));
                 StatusMessage = "Rules saved and applied";
             }
             else
@@ -398,7 +446,7 @@ public class MainViewModel : ViewModelBase, IDisposable
                 var rules = Monitors
                     .SelectMany(m => m.AssignedApps.Select(a => a.ToRule(m.DeviceId)))
                     .ToList();
-                _windowManager.ApplyRules(rules, _currentSetup.Monitors);
+                await Task.Run(() => _windowManager.ApplyRules(rules, setup.Monitors));
                 StatusMessage = "Rules applied (unsaved)";
             }
         }
@@ -409,27 +457,72 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void RefreshApps()
+    private async void Reset()
     {
-        RefreshRunningApps();
-        StatusMessage = "App list refreshed";
-    }
-
-    private void Reset()
-    {
-        DetectAndLoadSetup();
+        await Task.Run(DetectAndLoadSetup);
         HasUnsavedChanges = false;
         StatusMessage = "Reset to saved profile";
     }
 
-    private void CaptureCurrentLayout()
+    private async void CaptureCurrentLayout()
     {
         if (_currentSetup == null) return;
 
-        var rules = _windowManager.CaptureCurrentLayout(_currentSetup.Monitors);
-        AppLogger.Instance.Info($"Captured current layout: {rules.Count} app(s)");
+        var monitors = _currentSetup.Monitors;
+        var capturedRules = await Task.Run(() => _windowManager.CaptureCurrentLayout(monitors));
+        AppLogger.Instance.Info($"Captured current layout: {capturedRules.Count} app(s)");
 
-        // Clear existing assignments and repopulate from captured state
+        // Build a lookup of captured rules keyed by (ProcessName, WindowTitle) for upsert
+        var capturedLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rule in capturedRules)
+        {
+            var key = MakeRuleKey(rule.ProcessName, rule.WindowTitle);
+            capturedLookup.Add(key);
+        }
+
+        // Remove existing rules that match a captured rule (they will be replaced).
+        // Rules for apps that are NOT currently open are preserved.
+        foreach (var monitor in Monitors)
+        {
+            var toRemove = monitor.AssignedApps
+                .Where(a => capturedLookup.Contains(MakeRuleKey(a.ProcessName, a.WindowTitle)))
+                .ToList();
+            foreach (var app in toRemove)
+                monitor.AssignedApps.Remove(app);
+        }
+
+        var unassignedToRemove = UnassignedApps
+            .Where(a => capturedLookup.Contains(MakeRuleKey(a.ProcessName, a.WindowTitle)))
+            .ToList();
+        foreach (var app in unassignedToRemove)
+            UnassignedApps.Remove(app);
+
+        // Add the freshly captured rules
+        foreach (var rule in capturedRules)
+        {
+            var monitorVm = Monitors.FirstOrDefault(m => m.DeviceId == rule.TargetMonitorId);
+            if (monitorVm != null)
+                monitorVm.AssignedApps.Add(new AppRuleViewModel(rule));
+            else
+                UnassignedApps.Add(new AppRuleViewModel(rule));
+        }
+
+        HasUnsavedChanges = true;
+
+        // Count total rules across all monitors + unassigned
+        var totalRules = Monitors.Sum(m => m.AssignedApps.Count) + UnassignedApps.Count;
+        StatusMessage = $"Captured {capturedRules.Count} app(s), {totalRules} total rules in profile";
+    }
+
+    private async void ClearAndCapture()
+    {
+        if (_currentSetup == null) return;
+
+        var monitors = _currentSetup.Monitors;
+        var rules = await Task.Run(() => _windowManager.CaptureCurrentLayout(monitors));
+        AppLogger.Instance.Info($"Clear & Capture: {rules.Count} app(s)");
+
+        // Replace: clear everything and repopulate from captured state only
         foreach (var monitor in Monitors)
             monitor.AssignedApps.Clear();
         UnassignedApps.Clear();
@@ -444,45 +537,95 @@ public class MainViewModel : ViewModelBase, IDisposable
         }
 
         HasUnsavedChanges = true;
-        StatusMessage = $"Captured current layout — {rules.Count} app(s) mapped";
+        StatusMessage = $"Cleared profile and captured {rules.Count} app(s)";
     }
 
-    private void OnSetupChanged(object? sender, SetupChangedEventArgs e)
+    private static string MakeRuleKey(string processName, string? windowTitle)
+    {
+        return string.IsNullOrEmpty(windowTitle)
+            ? processName
+            : $"{processName}\0{windowTitle}";
+    }
+
+    private async void OnSetupChanged(object? sender, SetupChangedEventArgs e)
     {
         AppLogger.Instance.Info($"Monitor setup changed: {e.NewSetup.Name} ({e.NewSetup.Monitors.Count} monitors)");
-        Application.Current.Dispatcher.Invoke(() =>
+
+        // Generation counter for event coalescing — if a newer event arrives while
+        // we're waiting for the lock, the older event skips its work.
+        var myGeneration = Interlocked.Increment(ref _setupChangeGeneration);
+
+        // Suppress window-move tracking before any work starts
+        _windowMovementWatcher.Suppressed = true;
+
+        await _setupChangeLock.WaitAsync();
+        try
         {
-            _windowMovementWatcher.Suppressed = true;
-            try
+            // A newer event arrived while we waited — let it handle the update
+            if (myGeneration != Volatile.Read(ref _setupChangeGeneration))
+                return;
+
+            // Heavy work (WMI, window enumeration) on a background thread
+            await Task.Run(() =>
             {
                 DetectAndLoadSetup();
 
-                // Auto-apply rules if a profile exists for the new setup
+                // Bail if a newer event arrived during detection
+                if (myGeneration != Volatile.Read(ref _setupChangeGeneration))
+                    return;
+
+                // Apply rules — SetWindowPos doesn't require the WPF dispatcher
                 if (_currentSetup != null)
                 {
                     var profile = _profileManager.GetProfile(_currentSetup);
                     if (profile != null)
                     {
                         _windowManager.ApplyRules(profile.Rules, _currentSetup.Monitors);
-                        StatusMessage = $"Setup changed to '{_currentSetup.Name}' — rules applied";
+                        Application.Current.Dispatcher.BeginInvoke(() =>
+                            StatusMessage = $"Setup changed to '{_currentSetup.Name}' — rules applied");
                     }
                     else
                     {
-                        StatusMessage = $"New setup detected: {_currentSetup.Name}";
+                        Application.Current.Dispatcher.BeginInvoke(() =>
+                            StatusMessage = $"New setup detected: {_currentSetup?.Name}");
                     }
                 }
-            }
-            finally
-            {
-                _windowMovementWatcher.Suppressed = false;
-            }
-        });
+            });
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.Error("Error handling setup change", ex);
+        }
+        finally
+        {
+            _setupChangeLock.Release();
+            _windowMovementWatcher.Suppressed = false;
+        }
     }
 
-    private void OnSessionChanged(object? sender, SessionChangedEventArgs e)
+    private async void OnSessionChanged(object? sender, SessionChangedEventArgs e)
     {
-        // Re-detect everything when session type changes
-        Application.Current.Dispatcher.Invoke(DetectAndLoadSetup);
+        // Re-detect everything when session type changes — same async pattern
+        var myGeneration = Interlocked.Increment(ref _setupChangeGeneration);
+        _windowMovementWatcher.Suppressed = true;
+
+        await _setupChangeLock.WaitAsync();
+        try
+        {
+            if (myGeneration != Volatile.Read(ref _setupChangeGeneration))
+                return;
+
+            await Task.Run(DetectAndLoadSetup);
+        }
+        catch (Exception ex)
+        {
+            AppLogger.Instance.Error("Error handling session change", ex);
+        }
+        finally
+        {
+            _setupChangeLock.Release();
+            _windowMovementWatcher.Suppressed = false;
+        }
     }
 
     private void OnHungWindowDetected(object? sender, HungWindowEventArgs e)
@@ -581,14 +724,22 @@ public class MainViewModel : ViewModelBase, IDisposable
 
             if (existingApp != null)
             {
-                if (sourceMonitor == targetMonitorVm)
-                    return;
-
                 // Update handle and title in case they changed
                 existingApp.WindowHandle = e.WindowHandle;
                 existingApp.WindowTitle = e.WindowTitle;
 
-                MoveApp(existingApp, sourceMonitor, targetMonitorVm);
+                // Capture current placement for this window
+                UpdateAppPlacement(existingApp, e.WindowHandle, e.TargetMonitor);
+
+                if (sourceMonitor == targetMonitorVm)
+                {
+                    // Same-monitor reposition: placement changed, mark dirty
+                    HasUnsavedChanges = true;
+                    return;
+                }
+
+                MoveApp(existingApp, sourceMonitor, targetMonitorVm, insertIndex: 0);
+
                 StatusMessage = $"{existingApp.DisplayName} moved to {targetMonitorVm.DisplayName}";
             }
             else
@@ -602,9 +753,56 @@ public class MainViewModel : ViewModelBase, IDisposable
                     ExecutablePath = e.ExecutablePath,
                     WindowHandle = e.WindowHandle
                 };
-                targetMonitorVm.AssignedApps.Add(newApp);
+                UpdateAppPlacement(newApp, e.WindowHandle, e.TargetMonitor);
+                // New window has focus; insert at top of z-order
+                targetMonitorVm.AssignedApps.Insert(0, newApp);
                 HasUnsavedChanges = true;
                 StatusMessage = $"{e.ProcessName} assigned to {targetMonitorVm.DisplayName}";
+            }
+        });
+    }
+
+    /// <summary>
+    /// Captures a window's current placement and updates the AppRuleViewModel
+    /// with proportional coordinates relative to the monitor's work area.
+    /// </summary>
+    private static void UpdateAppPlacement(AppRuleViewModel app, IntPtr hWnd, MonitorInfo monitor)
+    {
+        var rule = new WindowRule();
+        WindowManager.CaptureWindowPlacement(hWnd, monitor, rule);
+        app.RelativeX = rule.RelativeX;
+        app.RelativeY = rule.RelativeY;
+        app.RelativeWidth = rule.RelativeWidth;
+        app.RelativeHeight = rule.RelativeHeight;
+        app.ShowState = rule.ShowState;
+        app.CapturedWorkAreaWidth = rule.CapturedWorkAreaWidth;
+        app.CapturedWorkAreaHeight = rule.CapturedWorkAreaHeight;
+    }
+
+    private void OnWindowActivated(object? sender, WindowActivatedEventArgs e)
+    {
+        if (_windowMovementWatcher.Suppressed)
+            return;
+
+        Application.Current.Dispatcher.BeginInvoke(() =>
+        {
+            foreach (var monitor in Monitors)
+            {
+                var app = monitor.AssignedApps.FirstOrDefault(a => a.WindowHandle == e.WindowHandle)
+                    ?? monitor.AssignedApps.FirstOrDefault(a =>
+                        a.ProcessName.Equals(e.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                        a.WindowTitle.Equals(e.WindowTitle, StringComparison.OrdinalIgnoreCase));
+
+                if (app != null)
+                {
+                    int idx = monitor.AssignedApps.IndexOf(app);
+                    if (idx > 0)
+                    {
+                        monitor.AssignedApps.Move(idx, 0);
+                        HasUnsavedChanges = true;
+                    }
+                    return;
+                }
             }
         });
     }
@@ -616,12 +814,14 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         _monitorWatcher.SetupChanged -= OnSetupChanged;
         _windowMovementWatcher.WindowMoved -= OnWindowMoved;
+        _windowMovementWatcher.WindowActivated -= OnWindowActivated;
         SessionDetector.SessionChanged -= OnSessionChanged;
         Win32WindowHelper.HungWindowDetected -= OnHungWindowDetected;
         _windowTracker.Dispose();  // saves final snapshot
         _monitorWatcher.Dispose();
         _windowMovementWatcher.Dispose();
         SessionDetector.StopWatching();
+        _setupChangeLock.Dispose();
 
         GC.SuppressFinalize(this);
     }

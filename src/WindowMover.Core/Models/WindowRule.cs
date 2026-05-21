@@ -40,5 +40,42 @@ public class WindowRule
     /// </summary>
     public string? WindowTitle { get; set; }
 
+    /// <summary>
+    /// Proportional X position within the monitor's work area (0.0 = left edge, 1.0 = right edge).
+    /// Null when no position has been captured (legacy rules center the window).
+    /// </summary>
+    public double? RelativeX { get; set; }
+
+    /// <summary>
+    /// Proportional Y position within the monitor's work area (0.0 = top edge, 1.0 = bottom edge).
+    /// </summary>
+    public double? RelativeY { get; set; }
+
+    /// <summary>
+    /// Proportional width relative to the monitor's work area (0.0 to 1.0).
+    /// </summary>
+    public double? RelativeWidth { get; set; }
+
+    /// <summary>
+    /// Proportional height relative to the monitor's work area (0.0 to 1.0).
+    /// </summary>
+    public double? RelativeHeight { get; set; }
+
+    /// <summary>
+    /// Window show state at capture time: Normal, Maximized, or Minimized.
+    /// </summary>
+    public WindowShowState? ShowState { get; set; }
+
+    /// <summary>
+    /// Work area width (pixels) at the time of capture. Used for diagnostics
+    /// and to detect resolution changes.
+    /// </summary>
+    public int? CapturedWorkAreaWidth { get; set; }
+
+    /// <summary>
+    /// Work area height (pixels) at the time of capture.
+    /// </summary>
+    public int? CapturedWorkAreaHeight { get; set; }
+
     public override string ToString() => $"{DisplayName} → {TargetMonitorId}";
 }

@@ -29,13 +29,20 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="📷 Capture Layout" Command="{Binding CaptureLayoutCommand}"
+                            ToolTip="Update positions for open apps; preserve rules for closed apps"
                             Style="{StaticResource ActionButton}" Margin="0,0,8,0" />
-                    <Button Content="↻ Refresh Apps" Command="{Binding RefreshAppsCommand}"
+                    <Button Content="🗑 Clear &amp; Capture" Command="{Binding ClearAndCaptureCommand}"
+                            ToolTip="Replace entire profile with only the currently open apps"
                             Style="{StaticResource ActionButton}" Margin="0,0,8,0" />
                     <Button Content="▶ Apply Now" Command="{Binding ApplyNowCommand}"
-                            Style="{StaticResource ActionButton}" Margin="0,0,8,0" />
+                            Style="{StaticResource ActionButton}" Margin="0,0,8,0"
+                            ToolTip="Move all windows to their assigned monitor positions" />
                     <Button Content="💾 Save" Command="{Binding SaveCommand}"
-                            Style="{StaticResource ActionButton}" />
+                            Style="{StaticResource ActionButton}" Margin="0,0,8,0"
+                            ToolTip="Save the current layout to the profile" />
+                    <CheckBox Content="Auto-save" IsChecked="{Binding AutoSave}"
+                              VerticalAlignment="Center" Foreground="{StaticResource TextBrush}"
+                              ToolTip="Automatically save changes when windows are moved or the layout is captured" />
                 </StackPanel>
                 <StackPanel Orientation="Vertical">
                     <TextBlock Text="WindowMover" FontSize="18" FontWeight="SemiBold"
@@ -67,9 +74,74 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0" Text="📋 Unassigned Apps"
-                               FontSize="14" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextBrush}" Margin="0,0,0,8" />
+                    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                        <Button DockPanel.Dock="Right" Content="?" FontSize="12" FontWeight="Bold"
+                                Padding="6,1" Background="Transparent"
+                                Foreground="{StaticResource TextSecondaryBrush}"
+                                BorderThickness="1" BorderBrush="{StaticResource TextSecondaryBrush}"
+                                Cursor="Hand" VerticalAlignment="Center">
+                            <Button.ToolTip>
+                                <ToolTip MaxWidth="320" Placement="Right">
+                                    <StackPanel Margin="4">
+                                        <TextBlock Text="Why do apps appear here?"
+                                                   FontWeight="SemiBold" FontSize="13"
+                                                   Margin="0,0,0,8" />
+                                        <StackPanel Margin="0,0,0,6">
+                                            <TextBlock Text="&#x2022;  Newly opened app"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="No matching rule exists in the current profile."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,6">
+                                            <TextBlock Text="&#x2022;  Window title changed"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="The title changed between sessions, so the saved rule no longer matches."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,6">
+                                            <TextBlock Text="&#x2022;  Manually unassigned"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="You moved it here using the unlock button."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,6">
+                                            <TextBlock Text="&#x2022;  Monitor disconnected"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="The monitor it was assigned to is no longer connected."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,6">
+                                            <TextBlock Text="&#x2022;  Switched profiles"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="Running apps not included in the new profile appear here."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <StackPanel Margin="0,0,0,8">
+                                            <TextBlock Text="&#x2022;  New profile created"
+                                                       FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="A new profile starts empty, so all running apps appear here until assigned."
+                                                       FontSize="11" Margin="14,0,0,0" TextWrapping="Wrap"
+                                                       Opacity="0.8" />
+                                        </StackPanel>
+                                        <Border BorderThickness="0,1,0,0" BorderBrush="Gray"
+                                                Padding="0,6,0,0">
+                                            <TextBlock Text="Drag an app to a monitor to assign it, or click the trash icon to remove it from the profile."
+                                                       FontSize="11" TextWrapping="Wrap"
+                                                       FontStyle="Italic" Opacity="0.7" />
+                                        </Border>
+                                    </StackPanel>
+                                </ToolTip>
+                            </Button.ToolTip>
+                        </Button>
+                        <TextBlock Text="📋 Unassigned Apps"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextBrush}" />
+                    </DockPanel>
 
                     <ListBox Grid.Row="1"
                              ItemsSource="{Binding UnassignedApps}"
@@ -83,18 +155,25 @@
                                         Cursor="Hand"
                                         MouseMove="AppCard_MouseMove"
                                         Tag="{Binding}">
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding DisplayName}"
-                                                   Foreground="{StaticResource TextBrush}"
-                                                   FontSize="13" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   FontSize="11" TextWrapping="Wrap" />
-                                        <TextBlock Text="{Binding WindowTitle}"
-                                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                                   FontSize="11" TextWrapping="Wrap"
-                                                   Visibility="{Binding WindowTitle, Converter={StaticResource NonEmptyToVisibleConverter}}" />
-                                    </StackPanel>
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Content="🗑" FontSize="9" Padding="4,1"
+                                                Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
+                                                BorderThickness="0" Cursor="Hand" VerticalAlignment="Center"
+                                                ToolTip="Delete from profile (permanently remove this rule)"
+                                                Click="DeleteUnassignedApp_Click" Tag="{Binding}" />
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Foreground="{StaticResource TextBrush}"
+                                                       FontSize="13" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding ProcessName, StringFormat='({0})'}"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       FontSize="11" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding WindowTitle}"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       FontSize="11" TextWrapping="Wrap"
+                                                       Visibility="{Binding WindowTitle, Converter={StaticResource NonEmptyToVisibleConverter}}" />
+                                        </StackPanel>
+                                    </DockPanel>
                                 </Border>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -144,17 +223,84 @@
                                 </Grid.RowDefinitions>
 
                                 <!-- Monitor header -->
-                                <StackPanel Grid.Row="0">
-                                    <TextBlock FontSize="14" FontWeight="SemiBold"
-                                               Foreground="{StaticResource AccentBrush}">
-                                        <Run Text="🖥️ " />
-                                        <Run Text="{Binding DisplayName, Mode=OneWay}" />
-                                    </TextBlock>
-                                    <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0">
-                                        <Run Text="{Binding Resolution, Mode=OneWay}" />
-                                        <Run Text="{Binding IsBuiltIn, Mode=OneWay, StringFormat=' (Built-in: {0})'}" />
-                                    </TextBlock>
-                                </StackPanel>
+                                <DockPanel Grid.Row="0">
+                                    <Button DockPanel.Dock="Right" Content="?" FontSize="12" FontWeight="Bold"
+                                            Padding="6,1" Background="Transparent"
+                                            Foreground="{StaticResource TextSecondaryBrush}"
+                                            BorderThickness="1" BorderBrush="{StaticResource TextSecondaryBrush}"
+                                            Cursor="Hand" VerticalAlignment="Top">
+                                        <Button.ToolTip>
+                                            <ToolTip MaxWidth="320" Placement="Left">
+                                                <StackPanel Margin="4">
+                                                    <TextBlock Text="Monitor column"
+                                                               FontWeight="SemiBold" FontSize="13"
+                                                               Margin="0,0,0,8" />
+
+                                                    <TextBlock Text="DISPLAY INFO" FontWeight="SemiBold" FontSize="11"
+                                                               Foreground="CornflowerBlue" Margin="0,0,0,4" />
+                                                    <StackPanel Margin="0,0,0,4">
+                                                        <TextBlock Text="&#x2022;  Resolution shows the monitor's pixel dimensions"
+                                                                   FontSize="11" TextWrapping="Wrap" Opacity="0.8" />
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="&#x2022;  Built-in: True = laptop screen; False = external monitor (dock or cable)"
+                                                                   FontSize="11" TextWrapping="Wrap" Opacity="0.8" />
+                                                    </StackPanel>
+
+                                                    <TextBlock Text="ASSIGNING APPS" FontWeight="SemiBold" FontSize="11"
+                                                               Foreground="CornflowerBlue" Margin="0,0,0,4" />
+                                                    <StackPanel Margin="0,0,0,4">
+                                                        <TextBlock Text="&#x2022;  Drag apps from Unassigned or other monitors into this column"
+                                                                   FontSize="11" TextWrapping="Wrap" Opacity="0.8" />
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="&#x2022;  Moving a window to another monitor is detected automatically"
+                                                                   FontSize="11" TextWrapping="Wrap" Opacity="0.8" />
+                                                    </StackPanel>
+
+                                                    <TextBlock Text="APP CARD CONTROLS" FontWeight="SemiBold" FontSize="11"
+                                                               Foreground="CornflowerBlue" Margin="0,0,0,4" />
+                                                    <StackPanel Margin="0,0,0,4">
+                                                        <TextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.8">
+                                                            <Run FontWeight="SemiBold">&#x25B2; &#x25BC;</Run>
+                                                            <Run>Change ordering. Apps higher in the list appear in front when Apply Now is used.</Run>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,0,4">
+                                                        <TextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.8">
+                                                            <Run FontWeight="SemiBold">&#x1F513;</Run>
+                                                            <Run>Unassign from this monitor. The rule moves to the Unassigned list but stays in the profile.</Run>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock FontSize="11" TextWrapping="Wrap" Opacity="0.8">
+                                                            <Run FontWeight="SemiBold">&#x1F5D1;</Run>
+                                                            <Run>Delete from profile. Permanently removes this app rule.</Run>
+                                                        </TextBlock>
+                                                    </StackPanel>
+
+                                                    <Border BorderThickness="0,1,0,0" BorderBrush="Gray"
+                                                            Padding="0,6,0,0">
+                                                        <TextBlock Text="If this monitor is disconnected, its assigned apps move to the Unassigned list."
+                                                                   FontSize="11" TextWrapping="Wrap"
+                                                                   FontStyle="Italic" Opacity="0.7" />
+                                                    </Border>
+                                                </StackPanel>
+                                            </ToolTip>
+                                        </Button.ToolTip>
+                                    </Button>
+                                    <StackPanel>
+                                        <TextBlock FontSize="14" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource AccentBrush}">
+                                            <Run Text="🖥️ " />
+                                            <Run Text="{Binding DisplayName, Mode=OneWay}" />
+                                        </TextBlock>
+                                        <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0">
+                                            <Run Text="{Binding Resolution, Mode=OneWay}" />
+                                            <Run Text="{Binding IsBuiltIn, Mode=OneWay, StringFormat=' (Built-in: {0})'}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </DockPanel>
 
                                 <Separator Grid.Row="1" Margin="0,8" Background="{StaticResource SurfaceLightBrush}" />
 
@@ -175,17 +321,22 @@
                                                         <Button Content="▲" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
-                                                                ToolTip="Move up (higher z-order)"
+                                                                ToolTip="Move up (appears in front of apps below)"
                                                                 Click="MoveAppUp_Click" Tag="{Binding}" />
-                                                        <Button Content="✕" FontSize="9" Padding="4,1"
+                                                        <Button Content="🔓" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
-                                                                ToolTip="Unassign from this monitor"
-                                                                Click="RemoveApp_Click" Tag="{Binding}" />
+                                                                ToolTip="Unassign from this monitor (keeps rule in profile)"
+                                                                Click="UnassignApp_Click" Tag="{Binding}" />
+                                                        <Button Content="🗑" FontSize="9" Padding="4,1"
+                                                                Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
+                                                                BorderThickness="0" Cursor="Hand"
+                                                                ToolTip="Delete from profile (permanently remove this rule)"
+                                                                Click="DeleteApp_Click" Tag="{Binding}" />
                                                         <Button Content="▼" FontSize="9" Padding="4,1"
                                                                 Background="Transparent" Foreground="{StaticResource TextSecondaryBrush}"
                                                                 BorderThickness="0" Cursor="Hand"
-                                                                ToolTip="Move down (lower z-order)"
+                                                                ToolTip="Move down (appears behind apps above)"
                                                                 Click="MoveAppDown_Click" Tag="{Binding}" />
                                                     </StackPanel>
                                                     <StackPanel>
