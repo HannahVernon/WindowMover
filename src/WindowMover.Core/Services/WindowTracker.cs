@@ -369,11 +369,9 @@ public class WindowTracker : IDisposable
 
     private static string GetWindowTitle(IntPtr hwnd)
     {
-        int length = User32.GetWindowTextLength(hwnd);
-        if (length == 0) return string.Empty;
-        var buffer = new char[length + 1];
-        User32.GetWindowText(hwnd, buffer, buffer.Length);
-        return new string(buffer, 0, length);
+        var buffer = new char[512];
+        int length = User32.InternalGetWindowText(hwnd, buffer, buffer.Length);
+        return length > 0 ? new string(buffer, 0, length) : string.Empty;
     }
 
     private static SnapshotRect GetNormalBounds(User32.WINDOWPLACEMENT placement)

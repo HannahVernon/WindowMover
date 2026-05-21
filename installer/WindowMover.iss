@@ -38,8 +38,8 @@ Name: "startupentry"; Description: "Start WindowMover automatically when I log i
 
 [Files]
 ; Publish the app as self-contained first:
-;   dotnet publish src\WindowMover -c Release -r win-x64 --self-contained -o publish
-Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+;   dotnet publish src\WindowMover -c Release -r win-x64 --self-contained -o publish\WindowMover
+Source: "..\publish\WindowMover\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

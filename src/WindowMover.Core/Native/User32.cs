@@ -30,6 +30,9 @@ internal static partial class User32
     [LibraryImport("user32.dll", EntryPoint = "GetWindowTextLengthW")]
     public static partial int GetWindowTextLength(IntPtr hWnd);
 
+    [LibraryImport("user32.dll", EntryPoint = "InternalGetWindowText", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int InternalGetWindowText(IntPtr hWnd, [Out] char[] lpString, int nMaxCount);
+
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
