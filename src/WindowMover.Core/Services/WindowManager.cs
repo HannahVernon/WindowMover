@@ -320,6 +320,11 @@ public class WindowManager
         if (!User32.IsWindowVisible(hWnd))
             return false;
 
+        // Skip cloaked windows (UWP apps like Settings that are suspended but
+        // still report WS_VISIBLE; DWM hides them via the DWMWA_CLOAKED attribute)
+        if (Dwmapi.IsWindowCloaked(hWnd))
+            return false;
+
         // Must have no owner (top-level)
         if (User32.GetParent(hWnd) != IntPtr.Zero)
             return false;

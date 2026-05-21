@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Input;
 using WindowMover.Core.Models;
 using WindowMover.Core.Services;
 
@@ -41,7 +42,6 @@ public class MainViewModel : ViewModelBase, IDisposable
 
         SaveCommand = new RelayCommand(Save, () => HasUnsavedChanges);
         ApplyNowCommand = new RelayCommand(ApplyNow);
-        RefreshAppsCommand = new RelayCommand(RefreshApps);
         ResetCommand = new RelayCommand(Reset);
         CaptureLayoutCommand = new RelayCommand(CaptureCurrentLayout);
         ClearAndCaptureCommand = new RelayCommand(ClearAndCapture);
@@ -79,6 +79,7 @@ public class MainViewModel : ViewModelBase, IDisposable
         {
             SetProperty(ref _hasUnsavedChanges, value);
             OnPropertyChanged(nameof(UnsavedIndicator));
+            CommandManager.InvalidateRequerySuggested();
         }
     }
 
@@ -93,7 +94,6 @@ public class MainViewModel : ViewModelBase, IDisposable
     // Commands
     public RelayCommand SaveCommand { get; }
     public RelayCommand ApplyNowCommand { get; }
-    public RelayCommand RefreshAppsCommand { get; }
     public RelayCommand ResetCommand { get; }
     public RelayCommand CaptureLayoutCommand { get; }
     public RelayCommand ClearAndCaptureCommand { get; }
@@ -194,6 +194,24 @@ public class MainViewModel : ViewModelBase, IDisposable
     {
         sourceMonitor.AssignedApps.Remove(app);
         UnassignedApps.Add(app);
+        HasUnsavedChanges = true;
+    }
+
+    /// <summary>
+    /// Permanently removes an app rule from the profile (monitor-assigned).
+    /// </summary>
+    public void DeleteApp(AppRuleViewModel app, MonitorViewModel sourceMonitor)
+    {
+        sourceMonitor.AssignedApps.Remove(app);
+        HasUnsavedChanges = true;
+    }
+
+    /// <summary>
+    /// Permanently removes an app rule from the unassigned pool.
+    /// </summary>
+    public void DeleteUnassignedApp(AppRuleViewModel app)
+    {
+        UnassignedApps.Remove(app);
         HasUnsavedChanges = true;
     }
 
@@ -414,13 +432,6 @@ public class MainViewModel : ViewModelBase, IDisposable
             _windowMovementWatcher.Suppressed = false;
             IsTopmost = false;
         }
-    }
-
-    private async void RefreshApps()
-    {
-        var windows = await Task.Run(() => _windowManager.GetVisibleWindows());
-        RefreshRunningApps(windows);
-        StatusMessage = "App list refreshed";
     }
 
     private async void Reset()
