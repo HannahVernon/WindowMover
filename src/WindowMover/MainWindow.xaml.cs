@@ -216,7 +216,7 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void RemoveApp_Click(object sender, RoutedEventArgs e)
+    private void UnassignApp_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button button && button.Tag is AppRuleViewModel app)
         {
@@ -229,6 +229,29 @@ public partial class MainWindow : Window
                     break;
                 }
             }
+        }
+    }
+
+    private void DeleteApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is AppRuleViewModel app)
+        {
+            foreach (var monitor in ViewModel.Monitors)
+            {
+                if (monitor.AssignedApps.Contains(app))
+                {
+                    ViewModel.DeleteApp(app, monitor);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void DeleteUnassignedApp_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && button.Tag is AppRuleViewModel app)
+        {
+            ViewModel.DeleteUnassignedApp(app);
         }
     }
 
