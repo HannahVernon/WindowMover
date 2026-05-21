@@ -170,14 +170,9 @@ public class WindowMovementWatcher : IDisposable
                 try { exePath = process.MainModule?.FileName; } catch { }
 
                 // Capture the window title for per-window matching
-                int titleLength = User32.GetWindowTextLength(hwnd);
-                string windowTitle = string.Empty;
-                if (titleLength > 0)
-                {
-                    var buffer = new char[titleLength + 1];
-                    User32.GetWindowText(hwnd, buffer, buffer.Length);
-                    windowTitle = new string(buffer, 0, titleLength);
-                }
+                var titleBuffer = new char[512];
+                int titleLength = User32.InternalGetWindowText(hwnd, titleBuffer, titleBuffer.Length);
+                string windowTitle = titleLength > 0 ? new string(titleBuffer, 0, titleLength) : string.Empty;
 
                 WindowMoved?.Invoke(this, new WindowMovedEventArgs(
                     hwnd,
@@ -221,14 +216,9 @@ public class WindowMovementWatcher : IDisposable
             User32.GetWindowThreadProcessId(hwnd, out var processId);
             var process = Process.GetProcessById((int)processId);
 
-            int titleLength = User32.GetWindowTextLength(hwnd);
-            string windowTitle = string.Empty;
-            if (titleLength > 0)
-            {
-                var buffer = new char[titleLength + 1];
-                User32.GetWindowText(hwnd, buffer, buffer.Length);
-                windowTitle = new string(buffer, 0, titleLength);
-            }
+            var titleBuffer = new char[512];
+            int titleLength = User32.InternalGetWindowText(hwnd, titleBuffer, titleBuffer.Length);
+            string windowTitle = titleLength > 0 ? new string(titleBuffer, 0, titleLength) : string.Empty;
 
             Debug.WriteLine($"Foreground: {process.ProcessName} / \"{windowTitle}\" (handle {hwnd})");
 

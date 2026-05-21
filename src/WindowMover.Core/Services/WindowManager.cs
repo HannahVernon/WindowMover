@@ -429,12 +429,12 @@ public class WindowManager
 
     private static string GetWindowTitle(IntPtr hWnd)
     {
-        int length = User32.GetWindowTextLength(hWnd);
-        if (length == 0) return string.Empty;
-
-        var buffer = new char[length + 1];
-        User32.GetWindowText(hWnd, buffer, buffer.Length);
-        return new string(buffer, 0, length);
+        // InternalGetWindowText reads from the kernel's cached title.
+        // Unlike GetWindowText, it never sends WM_GETTEXT cross-process,
+        // so it cannot block on windows with stalled message pumps.
+        var buffer = new char[512];
+        int length = User32.InternalGetWindowText(hWnd, buffer, buffer.Length);
+        return length > 0 ? new string(buffer, 0, length) : string.Empty;
     }
 
     private static string GetClassName(IntPtr hWnd)

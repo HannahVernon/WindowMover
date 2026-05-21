@@ -55,7 +55,7 @@ jobs:
         run: dotnet restore
 
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore -p:Version=${{ needs.prepare.outputs.version }}
 
       - name: Publish
         run: >
@@ -65,6 +65,7 @@ jobs:
           --self-contained true
           --output ./publish/WindowMover
           -p:PublishSingleFile=false
+          -p:Version=${{ needs.prepare.outputs.version }}
 
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
