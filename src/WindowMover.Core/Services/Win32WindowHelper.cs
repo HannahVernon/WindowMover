@@ -139,12 +139,9 @@ public static class Win32WindowHelper
     {
         try
         {
-            int length = User32.GetWindowTextLength(hWnd);
-            if (length == 0) return string.Empty;
-
-            var buffer = new char[length + 1];
-            User32.GetWindowText(hWnd, buffer, buffer.Length);
-            return new string(buffer, 0, length);
+            var buffer = new char[512];
+            int length = User32.InternalGetWindowText(hWnd, buffer, buffer.Length);
+            return length > 0 ? new string(buffer, 0, length) : string.Empty;
         }
         catch
         {
