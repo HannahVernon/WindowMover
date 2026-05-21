@@ -13,6 +13,9 @@ following features:
 ## Features
 
 - **Drag-and-drop layout editor** — see your monitors as columns, drag apps to assign them
+- **Window position & size capture** — remembers where each window was placed, restores proportionally across resolution/scale changes
+- **Z-order tracking** — tracks window stacking order in real time as you switch between apps
+- **Auto-save** — optionally saves layout changes automatically as you work
 - **Automatic profile switching** — detects when monitors connect/disconnect and applies rules
 - **Multiple setups supported** — home office, work office, laptop-only each get their own layout
 - **RDP awareness** — separate layout profiles for remote desktop sessions

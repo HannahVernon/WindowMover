@@ -574,11 +574,17 @@ public class WindowTracker : IDisposable
             var path = GetConfigPath();
             AppConfig config;
 
-            // Preserve other config values if the file already exists
             if (File.Exists(path))
             {
                 var existing = File.ReadAllText(path);
-                config = JsonSerializer.Deserialize<AppConfig>(existing, _jsonOptions) ?? new AppConfig();
+                if (string.IsNullOrWhiteSpace(existing) || existing.TrimStart()[0] != '{')
+                {
+                    config = new AppConfig();
+                }
+                else
+                {
+                    config = JsonSerializer.Deserialize<AppConfig>(existing, _jsonOptions) ?? new AppConfig();
+                }
             }
             else
             {
@@ -587,7 +593,11 @@ public class WindowTracker : IDisposable
 
             config.NextWindowUid = _nextUid;
             var json = JsonSerializer.Serialize(config, _jsonOptions);
-            File.WriteAllText(path, json);
+
+            // Atomic write: write to temp file then replace
+            var tempPath = path + ".tmp";
+            File.WriteAllText(tempPath, json);
+            File.Move(tempPath, path, overwrite: true);
         }
         catch (Exception ex)
         {

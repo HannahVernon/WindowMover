@@ -182,4 +182,41 @@ public class ProfileManager
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "WindowMover", "profiles");
+
+    /// <summary>
+    /// Loads application settings from %APPDATA%\WindowMover\settings.json.
+    /// Returns defaults if the file does not exist.
+    /// </summary>
+    public AppSettings LoadSettings()
+    {
+        var path = GetSettingsPath();
+        if (!File.Exists(path))
+            return new AppSettings();
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            return JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
+        }
+        catch
+        {
+            return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// Persists application settings to %APPDATA%\WindowMover\settings.json.
+    /// </summary>
+    public void SaveSettings(AppSettings settings)
+    {
+        var path = GetSettingsPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var json = JsonSerializer.Serialize(settings, _jsonOptions);
+        File.WriteAllText(path, json);
+    }
+
+    private static string GetSettingsPath() =>
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "WindowMover", "settings.json");
 }
